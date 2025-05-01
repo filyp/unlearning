@@ -11,3 +11,4 @@ paper
 archive/old_results
 **/*.sqlite3
 outputs
+data

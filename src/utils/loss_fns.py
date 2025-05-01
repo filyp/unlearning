@@ -3,7 +3,7 @@ import gc
 import torch as pt
 
 
-def cross_entropy_loss(output, batch, _dummy=None):
+def cross_entropy(output, batch):
     # return pt.nn.CrossEntropyLoss()(
     #     output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32),
     #     input_ids[:, 1:].flatten(),
@@ -18,11 +18,11 @@ def cross_entropy_loss(output, batch, _dummy=None):
     return logs.sum() / attn_mask.sum()
 
 
-def neg_cross_entropy_loss(output, batch, _dummy=None):
-    return -cross_entropy_loss(output, batch)
+def neg_cross_entropy(output, batch):
+    return -cross_entropy(output, batch)
 
 
-def stream_activation_loss(output, batch, _dummy=None):
+def stream_activation(output, batch):
     # last activation is huge for some reason, so ignore it
     acc = 0
     flat_attn_mask = batch["attention_mask"].reshape(-1, 1)
@@ -34,7 +34,7 @@ def stream_activation_loss(output, batch, _dummy=None):
 
 
 # adapted from https://github.com/rishub-tamirisa/tamper-resistance/blob/41b749ca4d9bcb7608c7ead2ca48b0508714af99/modules/objectives.py#L114
-def neg_entropy_loss(output, batch, _dummy=None) -> pt.Tensor:
+def neg_entropy(output, batch) -> pt.Tensor:
     """
     Compute the negative mean entropy loss for the given logits.
 
@@ -53,7 +53,7 @@ def neg_entropy_loss(output, batch, _dummy=None) -> pt.Tensor:
     return neg_entropy.sum() / batch["attention_mask"].sum()
 
 
-def correct_logit_minus_avg_loss(output, batch, clip_at=0):
+def correct_logit_minus_avg(output, batch, clip_at=0):
     logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
     ids = batch["input_ids"][:, 1:].flatten()
     true_logits = logits[pt.arange(len(ids)), ids]
@@ -66,7 +66,7 @@ def correct_logit_minus_avg_loss(output, batch, clip_at=0):
 
 
 
-def circuit_breaker_forget_loss(
+def circuit_breaker_forget(
     model,
     forget_inputs,
     target_layers,
@@ -122,7 +122,7 @@ def circuit_breaker_forget_loss(
     return forget_loss
 
 
-def circuit_breaker_retain_loss(
+def circuit_breaker_retain(
     model, retain_inputs, frozen_model=None, lora_model=None, square_norm=False
 ):
 
@@ -167,15 +167,6 @@ def circuit_breaker_retain_loss(
         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).pow(2).nanmean()
     else:
         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).nanmean()
-
-
-loss_fns = dict(
-    cross_entropy=cross_entropy_loss,
-    neg_cross_entropy=neg_cross_entropy_loss,
-    neg_entropy=neg_entropy_loss,
-    correct_logit_minus_avg=correct_logit_minus_avg_loss,
-    stream_activation=stream_activation_loss,
-)
 
 
 # def correct_logit_loss(output, input_ids):

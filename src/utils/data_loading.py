@@ -2,7 +2,12 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from git_and_reproducibility import repo_root
+from utils.git_and_reproducibility import repo_root
+
+# # mmlu_set = load_dataset("cais/mmlu", "college_biology", split="test")
+# mmlu_set = load_dataset("cais/mmlu", "all", split="validation")
+# mmlu_acc = eval_on(mmlu_set, model, temperature=1)
+
 
 # %%
 # load_local("wmdp_deduped_correct_answers_corpus.jsonl")
@@ -35,19 +40,15 @@ def load_batches(corpus, model_id, batch_size=4, max_length=128):
     return batches
 
 
-def load_retain_corpus(dataset_name):
-    match dataset_name:
-        case "fineweb_edu":
-            corpus = load_dataset(
-                "HuggingFaceFW/fineweb-edu",
-                name="sample-10BT",
-                split="train",
-                # just the smallest parquet file will be enough
-                data_files=["sample/10BT/013_00000.parquet"],
-            )
-            return corpus.select(range(2_500))
-        case _:
-            raise ValueError(f"Invalid dataset name: {dataset_name}")
+def load_fineweb_edu_corpus():
+    corpus = load_dataset(
+        "HuggingFaceFW/fineweb-edu",
+        name="sample-10BT",
+        split="train",
+        # just the smallest parquet file will be enough
+        data_files=["sample/10BT/013_00000.parquet"],
+    )
+    return corpus.select(range(2_500))
 
 
 # def load_filtered_mmlu_dataset():

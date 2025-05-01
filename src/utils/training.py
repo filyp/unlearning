@@ -8,7 +8,7 @@ from transformers import set_seed as set_transformers_seed
 
 import wandb
 from utils.evals import eval_on
-from utils.loss_fns import cross_entropy_loss
+from utils import loss_fns
 
 
 # --- Setup and Environment ---
@@ -41,7 +41,7 @@ def relearn(model, relearn_batches, conf, eval_callback):
         model.train()
         optimizer.zero_grad(set_to_none=True)
         output = model(**batch)
-        loss = cross_entropy_loss(output, batch)
+        loss = loss_fns.cross_entropy(output, batch)
         loss.backward()
         optimizer.step()
 
