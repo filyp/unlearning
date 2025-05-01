@@ -1,0 +1,25 @@
+# RestrictedPython
+bitsandbytes
+datasets
+gunicorn
+ipykernel
+ipywidgets
+matplotlib
+optuna
+optuna-dashboard
+# for windows, you may need to comment out optuna-fast-fanova, because installation is problematic
+optuna-fast-fanova
+peft
+scipy
+# tensordict
+torch
+torcheval
+transformers
+wandb
+plotly
+nbformat
+kaleido
+psycopg2-binary
+modal
+PyYAML
+hydra-core

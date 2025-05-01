@@ -1,0 +1,66 @@
+study_config:
+  target_modules:
+    - up_proj
+    - down_proj
+    - gate_proj
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+  model_id: meta-llama/Llama-3.2-1B
+  unlearning_epochs: 5
+  n_trials: 200
+  batch_size: 2
+  max_length: 96
+  forget_set_name: wmdp_deduped_unlearning
+  retain_set_name: fineweb_edu
+  category: bio
+  portion: 0.15
+  eval_temperature: 1
+
+relearn_config:
+  set_name: wmdp_deduped_relearning
+  epochs: 5
+  lr: 2.0e-5
+
+hyperparams:
+  normalize_grads: true
+  unlearning_loss_fn: neg_entropy
+  use_masking: true
+  train_adversary: true
+  ###
+  # adv_decay: 1
+  adv_lr: [1.e-6, 1.e-4, true]
+  fork_every_n_loops: [30, 300, false]
+  retain_momentum: 0.8
+  retaining_rate: [1.e-6, 1.e-4, true]
+  unlearning_rate: [1.e-9, 3.e-7, true]
+
+variants:
+  # ! loss functions
+  neg_entropy_loss: {}
+
+  # ! ablations
+  no_masking_ent:
+    use_masking: false
+  no_adversary_ent:
+    train_adversary: false
+  no_normalization_ent:
+    normalize_grads: false
+    unlearning_rate: [1.e-5, 1.e-4, true]  # about 3ooms lower than default
+
+  TAR2:
+    # it also has and target modules
+    # this run uses repE retain loss correctly, with squared norm
+    use_masking: false
+    retain_momentum: 0
+    rep_eng_retain_lr: 1
+    square_norm: true
+    normalize_grads: false
+    # because it uses no normalization
+    unlearning_rate: [1.e-5, 1.e-4, true]  # about 3ooms lower than default
+
+
+variant_num: 0
+extend_existing_study: false
+name: ???
