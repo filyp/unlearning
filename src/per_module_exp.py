@@ -42,7 +42,6 @@ def main(conf: dict):
     orig_model = AutoModelForCausalLM.from_pretrained(
         conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
     )
-    mask_fn = getattr(masking, conf.masking)
 
     for q in wmdp_mcq:
         if q["Llama-3.2-1B"] < 0.25:
@@ -85,12 +84,22 @@ def main(conf: dict):
             set_seeds(42)
             model = deepcopy(orig_model)
             model.config.use_cache = False
+
+            # ! limit which parameters are trained
             for n, p in model.named_parameters():
                 p.requires_grad = any(pattern in n for pattern in [param_name])
 
-            # ! one step of masked unlearning
+            # ! one step of unlearning
             optimizer = pt.optim.SGD(model.parameters(), lr=conf.unlearning_rate)
-            mask_fn(model, tokenizer, conf, f_corpus, r_corpus)
+            model.train()
+
+            unlearning_method = getattr(masking, conf.unlearning_method)
+            unlearning_method(model, tokenizer, conf, f_corpus)
+
+            masking_method = getattr(masking, conf.masking_method)
+            if masking_method is not None:
+                masking_method(model, tokenizer, conf, r_corpus)
+
             optimizer.step()
 
             # ! evaluate

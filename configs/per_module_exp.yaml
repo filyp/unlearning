@@ -2,8 +2,9 @@ model_id: meta-llama/Llama-3.2-1B
 category: bio
 split: dev_T
 unlearning_loss_fn: neg_cross_entropy
-masking: no_mask
-unlearning_rate: 9e-2
+masking_method: disruption_mask_avg  # null, disruption_mask_avg, disruption_mask_each
+unlearning_method: normal  # normal, common_core
+unlearning_rate: 5e-2
 use_related_retain: false
 # percentile: None
 num_disruption_batches: 16

@@ -15,6 +15,8 @@ def load_low_mi_set(paths):
         "json", data_files=[f"{base_url}/{path}" for path in paths], split="train"
     )
 
+# todo: wmdp-deduped has been deduped to ensure low mutual information between splits
+# todo: but after we have already split, we could reintroduce the duplicates!
 
 # %%
 questions_T = load_low_mi_set([
