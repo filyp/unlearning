@@ -1,4 +1,6 @@
 # %%
+import re
+
 import torch as pt
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM
@@ -28,9 +30,41 @@ questions_T = questions_T.map(lambda x: {"s": "T"})
 from datasets import concatenate_datasets
 
 questions = concatenate_datasets([questions_T, questions_V])
+print(f"{len(questions)=}")
 
 
 # %%
+# filter out all negated questions
+# if we don't, some corpus examples are awkard, speaking only of the benign option
+# about 6% of the questions are removed
+def is_not_a_not_question(q):
+    text = q["question"].lower()
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    last_sentence = sentences[-1]
+    return "not" not in last_sentence
+
+
+questions = questions.filter(is_not_a_not_question)
+print(f"{len(questions)=}")
+
+
+# %%
+# filter out all "none of the above" questions
+# they also result in awkward and mostly benign corpus examples
+# removes 0.7% of the questions
+def is_not_a_none_of_the_above_question(q):
+    correct_ans = q["choices"][q["answer"]].lower()
+    if "none" in correct_ans and ("above" in correct_ans or "choices" in correct_ans):
+        return False
+    return True
+
+
+questions = questions.filter(is_not_a_none_of_the_above_question)
+print(f"{len(questions)=}")
+
+
+# %%
+# official wmdp has been updated, so now some questions differ by some punctuation
 def sanitize_question(question):
     return question.lower().replace("?", "").replace(".", "").replace(",", "").replace("!", "").replace(":", "").replace(";", "").replace("'", "").replace('"', "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").replace("{", "").replace("}", "").replace(" ", "").replace("-", "").replace("_", "").replace("\n", "").replace("\\", "").replace("`", "").replace("*", "").replace("^", "").replace("~", "").replace("+", "").replace("=", "").replace("|", "").replace(":", "").replace(";", "").replace("'", "").replace('"', "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").replace("{", "").replace("}", "").replace("'", "").replace("\t", "")  # fmt: skip
 
@@ -115,6 +149,30 @@ for category in ["bio", "cyber"]:
 
 # %%
 
+correct_corpus = load_low_mi_set([
+    "wmdp-deduped/corpus_split_0.jsonl",
+    "wmdp-deduped/corpus_split_1.jsonl",
+    "wmdp-deduped/corpus_split_2.jsonl",
+    "wmdp-deduped/corpus_split_3.jsonl",
+    "wmdp-deduped/corpus_split_4.jsonl",
+])
+correct_corpus.to_json(general_data_path / "wmdp_deduped_correct_answers_corpus.jsonl")
+
+# %%
+
+wrong_answers_corpus = load_low_mi_set([
+    "wmdp-deduped/whp_corpus_split_0.jsonl",
+    "wmdp-deduped/whp_corpus_split_1.jsonl",
+    "wmdp-deduped/whp_corpus_split_2.jsonl",
+    "wmdp-deduped/whp_corpus_split_3.jsonl",
+    "wmdp-deduped/whp_corpus_split_4.jsonl",
+])
+wrong_answers_corpus.to_json(
+    general_data_path / "wmdp_deduped_wrong_answers_corpus.jsonl"
+)
+
+# %%
+
 # years_unlearning=[
 #     "dates-years-trimmed/corpus_split_0.jsonl",
 #     "dates-years-trimmed/corpus_split_1.jsonl",
@@ -145,27 +203,5 @@ for category in ["bio", "cyber"]:
 #     "mmlu_cats_random_trimmed/corpus_mmlu_philosophy.jsonl",
 #     "mmlu_cats_random_trimmed/corpus_mmlu_social sciences.jsonl",
 # ],
-
-# %%
-
-correct_corpus = load_low_mi_set([
-    "wmdp-deduped/corpus_split_0.jsonl",
-    "wmdp-deduped/corpus_split_1.jsonl",
-    "wmdp-deduped/corpus_split_2.jsonl",
-    "wmdp-deduped/corpus_split_3.jsonl",
-    "wmdp-deduped/corpus_split_4.jsonl",
-])
-correct_corpus.to_json(general_data_path / "wmdp_deduped_correct_answers_corpus.jsonl")
-
-# %%
-
-wrong_answers_corpus = load_low_mi_set([
-    "wmdp-deduped/whp_corpus_split_0.jsonl",
-    "wmdp-deduped/whp_corpus_split_1.jsonl",
-    "wmdp-deduped/whp_corpus_split_2.jsonl",
-    "wmdp-deduped/whp_corpus_split_3.jsonl",
-    "wmdp-deduped/whp_corpus_split_4.jsonl",
-])
-wrong_answers_corpus.to_json(general_data_path / "wmdp_deduped_wrong_answers_corpus.jsonl")
 
 # %%
