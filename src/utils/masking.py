@@ -58,7 +58,7 @@ def common_core(model, tokenizer, conf, forget_texts: Dataset):
     for p in model.parameters():
         if not p.requires_grad:
             continue
-        p.grad = p.acc
+        p.grad = p.acc / len(forget_texts)
         del p.acc
 
 

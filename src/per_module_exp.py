@@ -96,8 +96,8 @@ def main(conf: dict):
             unlearning_method = getattr(masking, conf.unlearning_method)
             unlearning_method(model, tokenizer, conf, f_corpus)
 
-            masking_method = getattr(masking, conf.masking_method)
-            if masking_method is not None:
+            if conf.masking_method is not None:
+                masking_method = getattr(masking, conf.masking_method)
                 masking_method(model, tokenizer, conf, r_corpus)
 
             optimizer.step()
