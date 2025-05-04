@@ -1,6 +1,7 @@
 import gc
 
 import torch as pt
+from IPython.display import HTML, display
 
 
 def cross_entropy(output, batch):
@@ -64,6 +65,15 @@ def correct_logit_minus_avg(output, batch, clip_at=0):
     true_logits *= attn_mask
     return true_logits.sum() / attn_mask.sum()
 
+
+def correct_logit(output, batch):
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
+    ids = batch["input_ids"][:, 1:].flatten()
+    true_logits = logits[pt.arange(len(ids)), ids]
+
+    attn_mask = batch["attention_mask"][:, 1:].flatten()
+    true_logits *= attn_mask
+    return true_logits.sum() / attn_mask.sum()
 
 
 def circuit_breaker_forget(
@@ -167,6 +177,39 @@ def circuit_breaker_retain(
         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).pow(2).nanmean()
     else:
         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).nanmean()
+
+
+def print_per_token_colored_loss(
+    model, tokenizer, conf, forget_text, max_log=10, reference=None
+):
+    batch = tokenizer(forget_text["text"], **conf.tokenizer)
+
+    with pt.no_grad():
+        output = model(**batch)
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
+    ids = batch["input_ids"][:, 1:].flatten()
+    # attn_mask = batch["attention_mask"][:, 1:].flatten()
+    probs = pt.nn.functional.softmax(logits, dim=-1)
+    true_probs = probs[pt.arange(len(ids)), ids]
+    logs = -pt.log(true_probs)
+    if reference is not None:
+        logs = logs - reference
+
+    print(f"max log: {logs.max()}")
+    html_tokens = []
+    for log, token in zip(logs, batch["input_ids"][0][1:]):
+        token_str = tokenizer.decode([token])
+        opacity = min(log.item() / max_log, 1.0)
+        # Escape HTML special characters in token_str if needed
+        token_str = (
+            token_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+        html_tokens.append(
+            f'<span style="background-color: rgba(255,0,0,{opacity:.2f});">{token_str}</span>'
+        )
+
+    display(HTML("".join(html_tokens)))
+    return logs
 
 
 # def correct_logit_loss(output, input_ids):
