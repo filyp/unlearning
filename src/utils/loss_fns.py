@@ -4,6 +4,45 @@ import torch as pt
 from IPython.display import HTML, display
 
 
+def non_target_disruption(output, batch, target_logits):
+    _vocab_size = output.logits.shape[2]
+    shifted_logits = output.logits[:, :-1, :]
+    shifted_target_logits = target_logits[:, :-1, :].detach().clone()
+    shifted_ids = batch["input_ids"][:, 1:]
+    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
+
+    logits = shifted_logits[shifted_attn_mask]
+    target_logits_flat = shifted_target_logits[shifted_attn_mask]
+    ids = shifted_ids[shifted_attn_mask]
+    assert ids.shape == (shifted_attn_mask.sum(),)
+    assert logits.shape == target_logits_flat.shape == (ids.shape[0], _vocab_size)
+
+    target_logits_flat[pt.arange(len(target_logits_flat)), ids] = float("-inf")
+    target_probs = pt.nn.functional.softmax(target_logits_flat, dim=-1)
+
+    # mask out the correct answer
+    # this is equivalent to the new_logit = []... code below
+    mask = pt.ones_like(logits, dtype=pt.bool)
+    mask[pt.arange(len(logits)), ids] = False
+    selected_logits = logits[mask].reshape(len(logits), _vocab_size - 1)
+    selected_target_probs = target_probs[mask].reshape(len(logits), _vocab_size - 1)
+
+    return pt.nn.functional.cross_entropy(
+        input=selected_logits, target=selected_target_probs
+    )
+
+
+# new_logits = []
+# new_target_probs = []
+# for id_, target_prob, logit in zip(ids, target_probs, logits):
+#     mask = pt.ones_like(logit, dtype=pt.bool)
+#     mask[id_] = False
+#     new_logits.append(logit[mask])
+#     new_target_probs.append(target_prob[mask])
+# new_logits = pt.stack(new_logits)
+# new_target_probs = pt.stack(new_target_probs)
+
+
 def cross_entropy(output, batch):
     # return pt.nn.CrossEntropyLoss()(
     #     output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32),

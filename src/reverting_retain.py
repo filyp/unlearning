@@ -1,0 +1,170 @@
+# %%
+import json
+import logging
+import os
+from copy import deepcopy
+
+import hydra
+import torch as pt
+from datasets import Dataset
+from omegaconf import OmegaConf
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import wandb
+from utils import loss_fns, masking
+from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
+from utils.evals import eval_on
+from utils.git_and_reproducibility import repo_root
+from utils.loss_fns import print_per_token_colored_loss
+from utils.training import set_seeds
+
+logging.basicConfig(level=logging.INFO)
+
+pt.set_default_device("cuda")
+
+
+# @hydra.main(config_path="../configs", config_name="reverting_retain.yaml")
+# def main(conf: dict):
+conf = OmegaConf.load("../configs/reverting_retain.yaml")
+
+# load corpora
+f_all = load_local("wmdp_deduped_correct_answers_corpus.jsonl")
+r_all = load_local("wmdp_deduped_wrong_answers_corpus.jsonl")
+
+# load questions
+wmdp_mcq = load_local(f"wmdp_deduped_{conf.category}/{conf.split}.jsonl")
+# do not unlearn questions where the model already does not know
+# use accuracies of llama 1B even for other models, to have the same questions
+wmdp_mcq = wmdp_mcq.filter(lambda ex: ex["Llama-3.2-1B"] > 0.25)
+
+# load disrution eval set
+disruption_batches = load_batches(
+    load_fineweb_edu_corpus(), conf.model_id, batch_size=16
+)[: conf.num_disruption_batches]
+
+tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
+tokenizer.pad_token = tokenizer.eos_token
+
+
+def trainable_params(model):
+    return [p for p in model.parameters() if p.requires_grad]
+
+
+def model_dist(model, orig_model):
+    dist = 0
+    for p, op in zip(trainable_params(model), trainable_params(orig_model)):
+        dist += pt.sum((p.data - op.data) ** 2)
+    return float(pt.sqrt(dist))
+
+
+# %% choose question
+q_index = 7
+q = wmdp_mcq[q_index]
+
+# ! load texts
+f_corpus = f_all.filter(lambda ex: ex["original_question"] == q["question"])
+
+
+# %%
+
+
+def _eval(model):
+    model.eval()
+    with pt.no_grad():
+        wmdp_acc = eval_on(Dataset.from_list([q]), model, temperature=1)
+        disr_loss = pt.mean(
+            pt.Tensor([
+                loss_fns.cross_entropy(model(**d_batch), d_batch)
+                for d_batch in disruption_batches
+            ])
+        )
+    return float(wmdp_acc), float(disr_loss)
+
+
+# initial eval
+orig_model = AutoModelForCausalLM.from_pretrained(
+    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+)
+orig_wmdp_acc, orig_disr_loss = _eval(orig_model)
+logging.info(f"wmdp={orig_wmdp_acc:8.4f}    disr={orig_disr_loss:8.4f}    orig model")
+
+q
+
+# %%
+conf.unlearning_rate = 1e-3
+conf.retaining_rate = 4e-3
+conf.unlearning_steps = 300
+
+# ! setup
+set_seeds(42)
+model = AutoModelForCausalLM.from_pretrained(
+    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+)
+model.config.use_cache = False
+wandb.init(
+    project="unlearning-wmdp2",
+    name=f"{conf.unlearning_rate}-{conf.retaining_rate}-reverting-retain",
+    group=f"reverting-retain-{q_index}",
+    config=OmegaConf.to_container(conf),
+)
+wandb.log({"wmdp_acc": orig_wmdp_acc, "disr_loss": orig_disr_loss})
+
+# ! limit which parameters are trained
+for n, p in model.named_parameters():
+    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+for n, p in orig_model.named_parameters():
+    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+
+masking.normal(model, tokenizer, conf, f_corpus)
+# masking.common_core(model, tokenizer, conf, f_corpus)
+for p in trainable_params(model):
+    p.unlearning_grad = p.grad
+    del p.grad
+
+
+# ! get reference logits
+model.zero_grad(set_to_none=True)
+batch = tokenizer(f_corpus["text"], **conf.tokenizer)
+output = model(**batch, output_hidden_states=True)
+# storing last_state is 1MB per batch, while storing logits is 50MB
+# but if we calculate it only once per question dive, maybe just don't store anything
+last_state = output.hidden_states[-1].detach().clone()
+target_logits = pt.einsum("bph,lh->bpl", last_state, model.model.embed_tokens.weight)
+# target_logits = output.logits.detach().clone()
+
+# ! one step of unlearning
+for i in range(conf.unlearning_steps):
+    model.train()
+
+    # ! retain pass
+    model.zero_grad(set_to_none=True)
+    output = model(**batch)
+    loss = loss_fns.non_target_disruption(output, batch, target_logits)
+    loss.backward()
+    for p, op in zip(trainable_params(model), trainable_params(orig_model)):
+        mask = (op.data - p.data).sign() != p.grad.sign()
+        p.grad *= mask
+        p.data -= p.grad * conf.retaining_rate
+        del p.grad
+
+    logging.info(f"i={i:4d} loss={loss:8.4f} dist={model_dist(model, orig_model):8.4f}")
+
+    # ! unlearn pass
+    for p in trainable_params(model):
+        p.data -= p.unlearning_grad * conf.unlearning_rate
+
+    # masking.normal(model, tokenizer, conf, f_corpus)
+    # for p in trainable_params(model):
+    #     p.data -= p.grad * conf.unlearning_rate
+    #     del p.grad
+
+    if i % 10 == 0:
+        # ! evaluate
+        wmdp_acc, disr_loss = _eval(model)
+        logging.info(f"wmdp={wmdp_acc:8.4f}    disr={disr_loss:8.4f}")
+        if disr_loss - orig_disr_loss > 0.1:
+            break
+        wandb.log({"wmdp_acc": wmdp_acc, "disr_loss": disr_loss})
+
+wandb.finish()
