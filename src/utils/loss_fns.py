@@ -6,7 +6,7 @@ from IPython.display import HTML, display
 
 def non_target_disruption(output, batch, target_logits):
     _vocab_size = output.logits.shape[2]
-    shifted_logits = output.logits[:, :-1, :]
+    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
     shifted_target_logits = target_logits[:, :-1, :].detach().clone()
     shifted_ids = batch["input_ids"][:, 1:]
     shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
@@ -44,18 +44,17 @@ def non_target_disruption(output, batch, target_logits):
 
 
 def cross_entropy(output, batch):
-    # return pt.nn.CrossEntropyLoss()(
-    #     output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32),
-    #     input_ids[:, 1:].flatten(),
-    # )
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
-    ids = batch["input_ids"][:, 1:].flatten()
-    attn_mask = batch["attention_mask"][:, 1:].flatten()
-    probs = pt.nn.functional.softmax(logits, dim=-1)
-    true_probs = probs[pt.arange(len(ids)), ids]
-    logs = -pt.log(true_probs)
-    logs *= attn_mask
-    return logs.sum() / attn_mask.sum()
+    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
+    shifted_ids = batch["input_ids"][:, 1:]
+    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
+    return pt.nn.functional.cross_entropy(
+        shifted_logits[shifted_attn_mask],
+        shifted_ids[shifted_attn_mask],
+    )
+    # equivalent to:
+    # probs = pt.nn.functional.softmax(logits, dim=-1)
+    # true_probs = probs[pt.arange(len(ids)), ids]
+    # return -pt.log(true_probs).mean()
 
 
 def neg_cross_entropy(output, batch):
