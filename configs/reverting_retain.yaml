@@ -8,8 +8,9 @@ retain_only_in_reverting_direction: true
 unlearning_method: normal  # normal, common_core, only_answer_tokens
 masking_method: null  # null, mask_out_answer_without_context
 
+num_epochs: 20
 unlearning_steps: 300
-unlearning_rate: 4e-2
+unlearning_rate: 20e-2
 retaining_rate: 2e-2
 # percentile: None
 num_disruption_batches: 8
