@@ -2,9 +2,15 @@ model_id: meta-llama/Llama-3.2-1B
 category: bio
 split: dev_T
 unlearning_loss_fn: neg_cross_entropy
+
+precompute_unlearning_grads: true
+retain_only_in_reverting_direction: true
+unlearning_method: normal  # normal, common_core, only_answer_tokens
+masking_method: null  # null, mask_out_answer_without_context
+
 unlearning_steps: 300
-unlearning_rate: 1e-3
-retaining_rate: 4e-3
+unlearning_rate: 4e-2
+retaining_rate: 2e-2
 # percentile: None
 num_disruption_batches: 8
 tokenizer:

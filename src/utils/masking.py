@@ -1,10 +1,10 @@
 # %%
 """These functions are supposed to set the gradients, based on some texts."""
-import os
 
+import torch as pt
+import torch.nn.functional as F
 from datasets import Dataset
 
-os.sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import loss_fns
 
 # %%
@@ -53,13 +53,57 @@ def common_core(model, tokenizer, conf, forget_texts: Dataset):
             p.grad *= mask
 
             p.acc += p.grad
-    
+
     # ! set grads
     for p in model.parameters():
         if not p.requires_grad:
             continue
         p.grad = p.acc / len(forget_texts)
         del p.acc
+
+
+def only_answer_tokens(model, tokenizer, conf, forget_texts: Dataset):
+    # ! prepare answer mask
+    batch = tokenizer(forget_texts["text"], **conf.tokenizer)
+    beginning_batch = tokenizer(forget_texts["beginning"], **conf.tokenizer)
+    long_attn = batch["attention_mask"]
+    short_attn = beginning_batch["attention_mask"]
+    pad_amount = long_attn.shape[1] - short_attn.shape[1]
+    short_attn_padded = F.pad(short_attn, (0, pad_amount), value=0)
+    answer_mask = (long_attn != short_attn_padded).to(pt.int64)
+    batch["attention_mask"] = answer_mask
+    # ! get the gradients
+    model.zero_grad(set_to_none=True)
+    output = model(**batch)
+    loss_fn = getattr(loss_fns, conf.unlearning_loss_fn)
+    forget_loss = loss_fn(output, batch)
+    forget_loss.backward()
+
+
+def mask_out_answer_without_context(model, tokenizer, conf, forget_texts: Dataset):
+    # ! backup grads
+    for p in model.parameters():
+        if not p.requires_grad:
+            continue
+        assert p.grad is not None
+        p.unlearning_grad = p.grad
+        del p.grad
+
+    # ! get the gradients for masking the beginning
+    ending_batch = tokenizer(forget_texts["ending"], **conf.tokenizer)
+    model.zero_grad(set_to_none=True)
+    output = model(**ending_batch)
+    loss = loss_fns.cross_entropy(output, ending_batch)
+    loss.backward()
+
+    # ! apply mask
+    for p in model.parameters():
+        if not p.requires_grad:
+            continue
+        mask = p.unlearning_grad.sign() == p.grad.sign()
+        p.unlearning_grad *= mask
+        p.grad = p.unlearning_grad
+        del p.unlearning_grad
 
 
 def disruption_mask_avg(model, tokenizer, conf, retain_texts: Dataset):
