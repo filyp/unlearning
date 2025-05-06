@@ -122,8 +122,9 @@ pt.cuda.empty_cache()
 
 conf = OmegaConf.load("../configs/precomputed_no_retain.yaml")
 # conf.update(variant)
-conf.name = "dynamic"
-conf.unlearning_rate = 3e-3
+conf.name = "neg-CE-only-gate-proj"
+# conf.unlearning_rate = 3e-5
+conf.unlearning_rate = 6e-3
 # conf.unlearning_method = "only_answer_tokens"
 # conf.masking_method = "mask_out_answer_without_context"
 conf.unlearning_method = "normal"
@@ -156,6 +157,8 @@ for q_index, q in enumerate(wmdp_mcq):
     f_corpus = f_corpora_per_question[q_index]
     # r_corpus = r_corpora_per_question[q_index % len(r_corpora_per_question)]
 
+
+
     unlearning_method = getattr(masking, conf.unlearning_method)
     unlearning_method(model, tokenizer, conf, f_corpus)
     if conf.masking_method is not None:
@@ -163,11 +166,36 @@ for q_index, q in enumerate(wmdp_mcq):
         masking_method(model, tokenizer, conf, f_corpus)
         # masking_method(model, tokenizer, conf, r_corpus)
 
-    # ! normalize grads and record
-    grad_norm = sum(p.grad.norm() ** 2 for p in trainable_params(model)) ** 0.5
-    logging.info(f"q_index={q_index:4d}   grad_norm={grad_norm:8.4f}")
+
+    # for i, forget_text in enumerate(f_corpus):
+    #     masking.only_answer_tokens(model, tokenizer, conf, forget_text)
+    #     masking.mask_out_answer_without_context(model, tokenizer, conf, forget_text)
+
+    #     if i == 0:
+    #         # ! first batch, so initialize acc
+    #         for p in trainable_params(model):
+    #             p.acc = p.grad
+    #         continue
+
+    #     # ! update acc
+    #     for p in trainable_params(model):
+    #         mask = p.acc.sign() == p.grad.sign()
+    #         p.acc *= mask
+    #         p.grad *= mask
+
+    #         p.acc += p.grad
+    #         del p.grad
+
     for p in trainable_params(model):
-        p.unlearning_grad_acc += p.grad / grad_norm
+        # p.unlearning_grad_acc += p.acc
+        p.unlearning_grad_acc += p.grad
+
+
+# ! normalize grads and record
+grad_norm = sum(p.unlearning_grad_acc.norm() ** 2 for p in trainable_params(model)) ** 0.5
+logging.info(f"q_index={q_index:4d}   grad_norm={grad_norm:8.4f}")
+for p in trainable_params(model):
+    p.unlearning_grad_acc += p.unlearning_grad_acc / grad_norm
 
 
 # ! unlearning
