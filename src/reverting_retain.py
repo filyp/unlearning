@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from copy import deepcopy
+import random
 
 import hydra
 import torch as pt
@@ -39,9 +40,9 @@ wmdp_mcq = load_local(f"wmdp_deduped_{conf.category}/{conf.split}.jsonl")
 wmdp_mcq = wmdp_mcq.filter(lambda ex: ex["Llama-3.2-1B"] > 0.25)
 
 # load disrution eval set
-disruption_batches = load_batches(
-    load_fineweb_edu_corpus(), conf.model_id, batch_size=16
-)[: conf.num_disruption_batches]
+_fineweb_batches = load_batches(load_fineweb_edu_corpus(), conf.model_id, batch_size=8)
+disruption_batches = _fineweb_batches[: conf.num_disruption_batches]
+additional_retain_batches = _fineweb_batches[conf.num_disruption_batches :]
 
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
 tokenizer.pad_token = tokenizer.eos_token
@@ -69,11 +70,13 @@ for q in wmdp_mcq:
     f_corpus = f_corpus.select(range(num_ex))
     f_corpora_per_question.append(f_corpus)
 
+
 # %%
 def _eval(model):
     model.eval()
     with pt.no_grad():
         # wmdp_acc = eval_on(Dataset.from_list([q]), model, temperature=1)
+        # wmdp_acc = eval_on(wmdp_mcq.select([19]), model, temperature=1)
         wmdp_acc = eval_on(wmdp_mcq, model, temperature=1)
         disr_loss = pt.mean(
             pt.Tensor([
@@ -106,16 +109,29 @@ for f_corpus in f_corpora_per_question:
     last_states_per_question.append(last_state)
 
 # %%
+def retain_pass(model, orig_model, batch, target_logits):
+    model.zero_grad(set_to_none=True)
+    output = model(**batch)
+    loss = loss_fns.non_target_disruption(output, batch, target_logits)
+    loss.backward()
+    for p, op in zip(trainable_params(model), trainable_params(orig_model)):
+        if conf.retain_only_in_reverting_direction:
+            mask = (op.data - p.data).sign() != p.grad.sign()
+            p.grad *= mask
+        p.data -= p.grad * conf.retaining_rate
+        del p.grad
+# %%
 
 for variant in [
     # fmt: off
-    dict(name="normal", unlearning_method="normal"),
-    dict(name="common-core", unlearning_method="common_core"),
-    dict(name="only-answer", unlearning_method="only_answer_tokens"),
-    dict(name="only-answer-ans-masked", unlearning_method="only_answer_tokens", masking_method="mask_out_answer_without_context"),
-    dict(name="dynamic", precompute_unlearning_grads=False),
-    dict(name="non-reverting-retain", retain_only_in_reverting_direction=False),
-    dict(name="no-retain", retaining_rate=0),
+    # dict(name="normal", unlearning_method="normal"),
+    # dict(name="only-answer", unlearning_method="only_answer_tokens"),
+    # dict(name="only-answer-ans-masked", unlearning_method="only_answer_tokens", masking_method="mask_out_answer_without_context"),
+    # dict(name="dynamic", precompute_unlearning_grads=False),
+    # dict(name="no-retain", retaining_rate=0),
+    # dict(name="common-core", unlearning_method="common_core"),
+    # dict(name="non-reverting-retain", retain_only_in_reverting_direction=False, unlearning_rate=3e-2, retaining_rate=1e-2),
+    dict(name="non-reverting-retain-decay99", retain_only_in_reverting_direction=False, unlearning_rate=3e-2, retaining_rate=1e-2, weight_decay=0.99),
     # fmt: on
 ]:
     conf = OmegaConf.load("../configs/reverting_retain.yaml")
@@ -151,27 +167,6 @@ for variant in [
             model.train()
             f_corpus = f_corpora_per_question[q_index]
 
-            # ! retain pass
-            last_state = last_states_per_question[q_index]
-            target_logits = pt.einsum(
-                "bph,lh->bpl", last_state, orig_model.model.embed_tokens.weight
-            )
-            model.zero_grad(set_to_none=True)
-            batch = tokenizer(f_corpus["text"], **conf.tokenizer)
-            output = model(**batch)
-            loss = loss_fns.non_target_disruption(output, batch, target_logits)
-            loss.backward()
-            for p, op in zip(trainable_params(model), trainable_params(orig_model)):
-                if conf.retain_only_in_reverting_direction:
-                    mask = (op.data - p.data).sign() != p.grad.sign()
-                    p.grad *= mask
-                # pre_update_sign = (op.data - p.data).sign()
-                p.data -= p.grad * conf.retaining_rate
-                # post_update_sign = (op.data - p.data).sign()
-                # sign_flips = (pre_update_sign * post_update_sign == -1)
-                # p.data[sign_flips] = op.data[sign_flips]
-                del p.grad
-
             # ! unlearn pass
             if conf.precompute_unlearning_grads:
                 unlearning_method(orig_model, tokenizer, conf, f_corpus)
@@ -192,8 +187,29 @@ for variant in [
                 p.data -= p.grad * conf.unlearning_rate
                 del p.grad
 
+            # decay into orig model
+            for p, op in zip(trainable_params(model), trainable_params(orig_model)):
+                p.data = p.data * conf.weight_decay + op.data * (1 - conf.weight_decay)
+
+            # ! retain pass
+            last_state = last_states_per_question[q_index]
+            batch = tokenizer(f_corpus["text"], **conf.tokenizer)
+            target_logits = pt.einsum(
+                "bph,lh->bpl", last_state, orig_model.model.embed_tokens.weight
+            )
+            retain_pass(model, orig_model, batch, target_logits)
+            pt.cuda.empty_cache()
+
+            # # ! additional retain pass
+            # a_batch = random.choice(additional_retain_batches)
+            # with pt.no_grad():
+            #     output = orig_model(**a_batch)
+            # retain_pass(model, orig_model, a_batch, output.logits)
+            # del output, a_batch
+            # pt.cuda.empty_cache()
+
             logging.info(
-                f"epoch={epoch:4d}   q_index={q_index:4d}   loss={loss:8.4f}   dist={model_dist(model, orig_model):8.4f}   grad_norm={grad_norm:8.4f}"
+                f"epoch={epoch:4d}   q_index={q_index:4d}   dist={model_dist(model, orig_model):8.4f}   grad_norm={grad_norm:8.4f}"
             )
 
         # ! evaluate
