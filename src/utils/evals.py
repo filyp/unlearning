@@ -76,4 +76,4 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
         del answer_probs, probs, last_token_logits, output
         pt.cuda.empty_cache()
 
-    return acc / len(dataset)
+    return float(acc / len(dataset))
