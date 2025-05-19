@@ -139,10 +139,9 @@ alternative_questions = alternative_questions.strip().split("\n")
 
 conf = OmegaConf.load("../configs/input_specific_unlearning.yaml")
 # conf.update(variant)
-conf.name = "onlyans-isu"
-# conf.unlearning_rate = 3e-4
-conf.unlearning_rate = 10e-2
-dist_thresh = 0.5
+conf.name = "onlyans-isu-with-context"
+conf.unlearning_rate = 5e-2
+dist_thresh = 0.3
 
 # ! setup
 set_seeds(42)
@@ -221,7 +220,7 @@ for p in trainable_params(model):
 
 # %%
 # ! unlearning
-for epoch in range(conf.num_epochs):
+for epoch in range(4):
     # ! evaluate
     model.eval()
     with pt.no_grad():
