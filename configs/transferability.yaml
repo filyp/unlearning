@@ -17,7 +17,7 @@ tokenizer:
 target_modules:
     - gate_proj
     - up_proj
-    - down_proj
+    # - down_proj
     - q_proj
     - k_proj
     - o_proj
