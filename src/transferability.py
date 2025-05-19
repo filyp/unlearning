@@ -19,11 +19,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
 from utils import loss_fns, masking
 from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
-from utils.evals import format_prompt
-from utils.evals import eval_on
+from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 from utils.loss_fns import print_per_token_colored_loss
-from utils.plots import visualize_module_values
+from utils.plots import visualize_module_values, visualize_token_layer_values
 from utils.training import set_seeds
 
 logging.basicConfig(level=logging.INFO)
@@ -86,10 +85,12 @@ def prepare_answer_mask(beginning_batch, full_batch):
 control_grad = TensorDict(
     {n: pt.zeros_like(p) for n, p in model.named_parameters() if p.requires_grad}
 )
-# for q_index in [5, 6, 7, 8, 9]:
-for q_index in [0, 1, 2, 3, 4]:
+for q_index in [5, 6, 7, 8, 9]:
+    # for q_index in [0, 1, 2, 3, 4]:
     q = wmdp_mcq[q_index]
-    f_corpus = paraphrases_all.filter(lambda ex: ex["original_question"] == q["question"])
+    f_corpus = paraphrases_all.filter(
+        lambda ex: ex["original_question"] == q["question"]
+    )
     for _ in range(4):
         beginning_text = format_prompt(q)
         beginning_batch = tokenizer(beginning_text, **conf.tokenizer)
@@ -112,7 +113,7 @@ for q_index in [0, 1, 2, 3, 4]:
 target_grad = TensorDict(
     {n: pt.zeros_like(p) for n, p in model.named_parameters() if p.requires_grad}
 )
-q_index = 8
+q_index = 3
 q = wmdp_mcq[q_index]
 f_corpus = paraphrases_all.filter(lambda ex: ex["original_question"] == q["question"])
 for _ in range(4):
@@ -132,7 +133,8 @@ for _ in range(4):
     q["answer"] = (q["answer"] - 1) % len(q["choices"])
     q["answer"], q["choices"]
 
-q["question"] + " " + q["choices"][q["answer"]]
+# q["question"] + " " + q["choices"][q["answer"]]
+q
 
 # %%
 "T-2 Mycotoxin can be deactivated by treatment with Sodium hypochlorite"
@@ -140,13 +142,13 @@ q["question"] + " " + q["choices"][q["answer"]]
 interven_grad = TensorDict(
     {n: pt.zeros_like(p) for n, p in model.named_parameters() if p.requires_grad}
 )
-for ex in f_corpus:
-# ex = f_corpus[29]
-# print(ex["beginning"] + " " + ex["ending"])
-    beginning_batch = tokenizer(ex["beginning"], **conf.tokenizer)
-    full_batch = tokenizer(f"{ex['beginning']} {ex['ending']}", **conf.tokenizer)
-    loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    interven_grad += get_grad(model, full_batch, loss_mask)
+# for ex in f_corpus:
+ex = f_corpus[22]
+print(ex["beginning"] + " " + ex["ending"])
+beginning_batch = tokenizer(ex["beginning"], **conf.tokenizer)
+full_batch = tokenizer(f"{ex['beginning']} {ex['ending']}", **conf.tokenizer)
+loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+interven_grad += get_grad(model, full_batch, loss_mask)
 
 n_to_corr = {}
 for n, p in model.named_parameters():
@@ -170,60 +172,85 @@ n_to_corr = {n: v / max_norm for n, v in n_to_corr.items()}
 
 visualize_module_values(n_to_corr, "")
 
-# %%
-# augment by rotations
-target_mcq = []
-for _ in range(4):
-    target_mcq.append(q)
-    # rotate the possible answers
-    _tmp = q["choices"].pop(0)
-    q["choices"].append(_tmp)
-    q["answer"] = (q["answer"] - 1) % len(q["choices"])
-    q["answer"], q["choices"]
-target_mcq = Dataset.from_list(target_mcq)
-
-control_mcq = []
-for q_index in [0, 1, 2, 3, 4]:
-    q_tmp = wmdp_mcq[q_index]
-    for _ in range(4):
-        control_mcq.append(q_tmp)
-        # rotate the possible answers
-        _tmp = q_tmp["choices"].pop(0)
-        q_tmp["choices"].append(_tmp)
-        q_tmp["answer"] = (q_tmp["answer"] - 1) % len(q_tmp["choices"])
-        q_tmp["answer"], q_tmp["choices"]
-control_mcq = Dataset.from_list(control_mcq)
 
 # %%
-lr = 0.0002
-xs = []
-ys = []
+def save_act_hook(module, args):
+    module.saved_act = args[0]
+
+
+def test_hook(module, input_grad, output_grad):
+    # module.custom_grad = pt.einsum("bti,bto->oi", module.saved_act, output_grad[0])
+    custom_grad = pt.einsum("bti,bto->toi", module.saved_act, output_grad[0])
+    module.weight.grad = None  # to save memory
+
+    # (ref.unsqueeze(0) * module.custom_grad).sum(dim=-1).sum(dim=-1)  # equivalent
+    ref = control_grad[module.weight.param_name]
+    module.weight.control_sim = [float((ref * pos).sum()) for pos in custom_grad]
+    ref = target_grad[module.weight.param_name]
+    module.weight.target_sim = [float((ref * pos).sum()) for pos in custom_grad]
+
+
+for n, p in model.named_parameters():
+    p.param_name = n
+for layer in model.model.layers:
+    # for module in [layer.mlp.up_proj, layer.mlp.gate_proj, layer.mlp.down_proj]:
+    for module in [layer.mlp.up_proj, layer.mlp.gate_proj]:
+        module._backward_hooks.clear()
+        module._forward_pre_hooks.clear()
+        module.register_full_backward_hook(test_hook)
+        module.register_forward_pre_hook(save_act_hook)
+
+# %%
+
+ex = f_corpus[16]
+print(ex)
+
+beginning_batch = tokenizer(ex["beginning"], **conf.tokenizer)
+full_batch = tokenizer(f"{ex['beginning']} {ex['ending']}", **conf.tokenizer)
+loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+get_grad(model, full_batch, loss_mask)
+
+# full_batch = tokenizer(f"{ex['beginning']} {ex['ending']}", **conf.tokenizer)
+# text = f"{ex['beginning']} {ex['ending']}"
+# full_batch = tokenizer(text, return_tensors="pt")
+# model.zero_grad(set_to_none=True)
+# model.train()
+# output = model(**full_batch)
+# loss = loss_fns.cross_entropy(output, full_batch)
+# loss.backward()
+
+
+tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
+
+all_control_sims = []
+all_target_sims = []
+for layer in model.model.layers:
+    # module = layer.mlp.up_proj  # todo others
+    module = layer.mlp.gate_proj  # todo others
+    # print(p.control_sim)
+    # print(p.target_sim)
+    all_control_sims.append(module.weight.control_sim)
+    all_target_sims.append(module.weight.target_sim)
+all_control_sims = pt.Tensor(all_control_sims)
+all_target_sims = pt.Tensor(all_target_sims)
+
+all_control_sims = all_control_sims.clip(min=0)
+all_target_sims = all_target_sims.clip(min=0)
+
+max_ = max(all_control_sims.max(), all_target_sims.max())
+print("max", max_)
+all_control_sims /= max_
+all_target_sims /= max_
+
+
+visualize_token_layer_values(all_control_sims, all_target_sims, tokens, "")
+
+# %%
 del model
 model = AutoModelForCausalLM.from_pretrained(
     conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-
-# %%
-
-target_acc = eval_on(target_mcq, model, temperature=1)
-control_acc = eval_on(control_mcq, model, temperature=1)
-xs.append(target_acc)
-ys.append(control_acc)
-print(f"target acc: {target_acc}, control acc: {control_acc}")
-
-for n, p in model.named_parameters():
-    if not any(pattern in n for pattern in ["o_proj", "gate_proj", "up_proj"]):
-        continue
-    if not any(pattern in n for pattern in [".0.", ".1.", ".2.", ".3.", ".4."]):
-        continue
-    p.data += interven_grad[n] * lr
-
-
-# %%
-# xs2, ys2 = xs, ys
-plt.plot(xs, ys)
-plt.plot(xs2, ys2)
 
 # %%
