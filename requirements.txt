@@ -11,7 +11,6 @@ optuna-dashboard
 optuna-fast-fanova
 peft
 scipy
-# tensordict
 torch
 torcheval
 transformers
@@ -23,3 +22,4 @@ psycopg2-binary
 modal
 PyYAML
 hydra-core
+tensordict

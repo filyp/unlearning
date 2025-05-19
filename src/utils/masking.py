@@ -71,10 +71,11 @@ def only_answer_tokens(model, tokenizer, conf, forget_texts: Dataset):
     pad_amount = long_attn.shape[1] - short_attn.shape[1]
     short_attn_padded = F.pad(short_attn, (0, pad_amount), value=0)
     answer_mask = (long_attn != short_attn_padded).to(pt.int64)
-    batch["attention_mask"] = answer_mask
     # ! get the gradients
     model.zero_grad(set_to_none=True)
+    # before 19.05.2025 it had a bug, where inference already was done with the answer mask
     output = model(**batch)
+    batch["attention_mask"] = answer_mask
     loss_fn = getattr(loss_fns, conf.unlearning_loss_fn)
     forget_loss = loss_fn(output, batch)
     forget_loss.backward()
