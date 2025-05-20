@@ -47,7 +47,7 @@ def relearn(model, relearn_batches, conf, eval_callback):
 
 
 def trainable_params(model):
-    return [p for p in model.parameters() if p.requires_grad]
+    return [(n, p) for n, p in model.named_parameters() if p.requires_grad]
 
 
 def get_grad(model, batch, loss_mask=None):

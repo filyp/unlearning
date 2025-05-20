@@ -1,11 +1,30 @@
 import matplotlib.pyplot as plt
 
 
-def visualize_module_values(n_to_color, title):
-    # Normalize
-    max_val = max(max(color) for color in n_to_color.values())
-    n_to_color = {n: [float(x / max_val) for x in v] for n, v in n_to_color.items()}
+# # %% module x layer, all corpus examples
+# # example usage
+# interven_grad = TensorDict(
+#     {n: pt.zeros_like(p) for n, p in model.named_parameters() if p.requires_grad}
+# )
+# # for ex in f_corpus:
+# ex = f_corpus[22]
+# interven_grad += get_grad_from_example(model, ex)
+# n_to_color = {
+#     n: [
+#         max((interven_grad[n] * control_grad[n]).sum(), 0),
+#         max((interven_grad[n] * target_grad[n]).sum(), 0),
+#         0,
+#     ]
+#     for n, p in model.named_parameters()
+#     if p.requires_grad
+# }
+# # Normalize
+# max_val = max(max(color) for color in n_to_color.values())
+# n_to_color = {n: [float(x / max_val) for x in v] for n, v in n_to_color.items()}
+# visualize_module_values(n_to_color, "")
 
+
+def visualize_module_values(n_to_color, title):
     # Parse labels and create color mapping
     layer_module_colors = []
     for param_name, color in n_to_color.items():
@@ -79,7 +98,6 @@ def visualize_module_values(n_to_color, title):
     plt.show()
 
 
-
 def visualize_token_layer_values(all_control_sims, all_target_sims, tokens, title=""):
     """
     Creates a heatmap visualization of token-layer values.
@@ -143,4 +161,3 @@ def visualize_token_layer_values(all_control_sims, all_target_sims, tokens, titl
 
     plt.title(title, y=0.85)
     plt.show()
-
