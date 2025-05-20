@@ -2,13 +2,10 @@ import matplotlib.pyplot as plt
 
 
 def visualize_module_values(n_to_color, title):
-    """
-    Creates a heatmap visualization of parameter values.
+    # Normalize
+    max_val = max(max(color) for color in n_to_color.values())
+    n_to_color = {n: [float(x / max_val) for x in v] for n, v in n_to_color.items()}
 
-    Args:
-        n_to_value: Dict mapping parameter names to values between -1 and 1
-            -1 is red, 0 is black, 1 is green
-    """
     # Parse labels and create color mapping
     layer_module_colors = []
     for param_name, color in n_to_color.items():
@@ -19,7 +16,6 @@ def visualize_module_values(n_to_color, title):
         parts = param_name.split("layers.")[1].split(".")
         layer = int(parts[0])
         param_name = ".".join(parts[1:]).replace(".weight", "")
-        color = tuple(color.tolist())
         layer_module_colors.append((layer, param_name, color))
 
     # Get unique sorted modules and layers

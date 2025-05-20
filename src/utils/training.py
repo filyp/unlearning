@@ -1,13 +1,11 @@
-import logging
 import random
 
 import numpy as np
-import optuna
 import torch as pt
+import torch.nn.functional as F
+from tensordict import TensorDict
 from transformers import set_seed as set_transformers_seed
 
-import wandb
-from utils.evals import eval_on
 from utils import loss_fns
 
 
@@ -34,7 +32,7 @@ def relearn(model, relearn_batches, conf, eval_callback):
         pt.cuda.empty_cache()
         batch_index = loop_num % len(relearn_batches)
         batch = relearn_batches[batch_index]
-        
+
         if batch_index == 0:
             eval_callback(model)
 
@@ -46,6 +44,33 @@ def relearn(model, relearn_batches, conf, eval_callback):
         optimizer.step()
 
     return model
+
+
+def trainable_params(model):
+    return [p for p in model.parameters() if p.requires_grad]
+
+
+def get_grad(model, batch, loss_mask=None):
+    model.zero_grad(set_to_none=True)
+    output = model(**batch)
+    if loss_mask is not None:
+        batch["attention_mask"] *= loss_mask
+    loss = loss_fns.cross_entropy(output, batch)
+    loss.backward()
+    grad = TensorDict(
+        {n: p.grad for n, p in model.named_parameters() if p.requires_grad},
+    )
+    model.zero_grad(set_to_none=True)
+    return grad
+
+
+def prepare_answer_mask(beginning_batch, full_batch):
+    long_attn = full_batch["attention_mask"]
+    short_attn = beginning_batch["attention_mask"]
+    pad_amount = long_attn.shape[1] - short_attn.shape[1]
+    short_attn_padded = F.pad(short_attn, (0, pad_amount), value=0)
+    answer_mask = (long_attn != short_attn_padded).to(pt.int64)
+    return answer_mask
 
 
 # def make_sure_optimal_values_are_not_near_range_edges(study):
@@ -90,4 +115,3 @@ def relearn(model, relearn_batches, conf, eval_callback):
 #         optuna.delete_study(study_name=study_name, storage=storage)
 #     except KeyError:
 #         pass
-

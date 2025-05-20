@@ -48,3 +48,5 @@ for n, p in model.named_parameters():
     if not any(pattern in n for pattern in [".0.", ".1.", ".2.", ".3.", ".4."]):
         continue
     p.data += interven_grad[n] * lr
+
+# %%

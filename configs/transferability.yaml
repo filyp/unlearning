@@ -17,11 +17,11 @@ tokenizer:
 target_modules:
     - gate_proj
     - up_proj
-    # - down_proj
+    - down_proj
     - q_proj
     - k_proj
     - o_proj
-    # - v_proj
+    - v_proj
     # - .0.mlp.gate_proj.weight
     # - .1.mlp.gate_proj.weight
     # - .2.mlp.gate_proj.weight
