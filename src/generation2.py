@@ -31,7 +31,7 @@ for q in wmdp_mcq:
     ans = q["choices"][q["answer"]]
     if "all" in ans.lower() and ("above" in ans.lower() or "choices" in ans.lower()):
         continue
-    if len(ans) > 40:
+    if len(ans) > 50:
         continue
     filtered_questions.append(q)
 
@@ -79,8 +79,11 @@ Answer: Operation Sea-Spray
 """
 
 
-q = filtered_questions[5]
+q = filtered_questions[8]
 print(q)
+
+# %%
+
 # for i, q in enumerate(wmdp_mcq):
 answer = q["choices"][q["answer"]]
 user_input = f"Question: {q['question']}\nAnswer: {answer}"
