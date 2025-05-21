@@ -31,7 +31,8 @@ pt.set_default_device("cuda")
 conf = OmegaConf.load("../configs/transferability.yaml")
 
 # load corpora
-paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
+# paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
+paraphrases_all = load_local("my_generation2/mmlu_high_school_biology.jsonl")
 
 # %%
 
@@ -77,8 +78,15 @@ def get_grad_from_example(model, beginning, ending):
 
 
 # %%
-q = paraphrases_all[3]
+q = paraphrases_all[2]
 q
+
+# %%
+
+print(eval_on([q], model, temperature=1))
+q["question"] = q["ru_question"]
+q["choices"] = q["ru_choices"]
+print(eval_on([q], model, temperature=1))
 
 # %% derive target grad
 target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
@@ -106,15 +114,18 @@ control_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(mode
 #     for q_rot in get_rotations(q):
 #         control_grad += get_grad_from_abcd_question(model, q_rot)
 
-for answer_control in q["answer_controls"]:
-    control_grad += get_grad_from_example(model, answer_control, q["answer_core"])
+for control in q["controls_answer_end"]:
+    control_grad += get_grad_from_example(model, control, q["answer_core"])
+
+# for beg, end in q["control_pairs"]:
+#     control_grad += get_grad_from_example(model, beg, end)
 
 norm = pt.Tensor(list(control_grad.norm().values())).norm()
 control_grad /= norm
 
 # %%
 pt.cuda.empty_cache()
-beginning = q["contexts"][8]
+beginning = q["contexts"][6]
 ending = q["answer_core"]
 
 with CalcSimilarityHooks(model, control_grad, target_grad):
@@ -156,4 +167,3 @@ visualize_token_layer_values(all_control_sims, all_target_sims, tokens, "")
 # visualize_token_layer_values(all_control_sims, all_self_sims, tokens, "")
 
 # %%
-q["answer_controls"]
