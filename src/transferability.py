@@ -26,6 +26,9 @@ from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize_module_values, visualize_token_layer_values
 from utils.training import get_grad, prepare_answer_mask, set_seeds, trainable_params
 
+# plt dark theme
+plt.style.use("dark_background")
+
 logging.basicConfig(level=logging.INFO)
 pt.set_default_device("cuda")
 conf = OmegaConf.load("../configs/transferability.yaml")
@@ -33,6 +36,8 @@ conf = OmegaConf.load("../configs/transferability.yaml")
 # load corpora
 # paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
 paraphrases_all = load_local("my_generation2/mmlu_high_school_biology.jsonl")
+
+fineweb_batches = load_batches(load_fineweb_edu_corpus(), conf.model_id, batch_size=8)
 
 # %%
 
@@ -78,47 +83,56 @@ def get_grad_from_example(model, beginning, ending):
 
 
 # %%
-q = paraphrases_all[2]
-q
+known_qs = []
+for q_orig in paraphrases_all:
+    q = deepcopy(q_orig)
 
-# %%
-
-print(eval_on([q], model, temperature=1))
-q["question"] = q["ru_question"]
-q["choices"] = q["ru_choices"]
-print(eval_on([q], model, temperature=1))
+    en_acc = eval_on([q], model, temperature=1)
+    q["question"] = q["ru_question"]
+    q["choices"] = q["ru_choices"]
+    ru_acc = eval_on([q], model, temperature=1)
+    print(en_acc, ru_acc)
+    if en_acc > 0.4 and ru_acc > 0.4:
+        known_qs.append(q_orig)
 
 # %% derive target grad
+q = known_qs[0]
+print(q["answer_core"])
+
+
 target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
 
-# # ! abcd
-# for q_rot in get_rotations(q):
-#     target_grad += get_grad_from_abcd_question(model, q_rot)
+# ! abcd
+for q_rot in get_rotations(q):
+    target_grad += get_grad_from_abcd_question(model, q_rot)
 
-# ! russian example
-for ru_context in q["ru_contexts"]:
-    target_grad += get_grad_from_example(model, ru_context, q["ru_answer_core"])
+# # ! russian example
+# for ru_context in q["ru_contexts"]:
+#     target_grad += get_grad_from_example(model, ru_context, q["ru_answer_core"])
 
 # # ! normal example
 # for context in q["contexts"][:5]:
 #     target_grad += get_grad_from_example(model, context, q["answer_core"])
 
-
 norm = pt.Tensor(list(target_grad.norm().values())).norm()
 target_grad /= norm
-target_grad *= 3
+target_grad *= 0.1
 
-# %% derive control grad
+
+# # %% derive control grad
 control_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
 # for q in [q_alt, q_alt2]:
 #     for q_rot in get_rotations(q):
 #         control_grad += get_grad_from_abcd_question(model, q_rot)
 
-for control in q["controls_answer_end"]:
-    control_grad += get_grad_from_example(model, control, q["answer_core"])
+# for control in q["controls_answer_end"]:
+#     control_grad += get_grad_from_example(model, control, q["answer_core"])
 
 # for beg, end in q["control_pairs"]:
 #     control_grad += get_grad_from_example(model, beg, end)
+
+for batch in fineweb_batches[:10]:
+    control_grad += get_grad(model, batch)
 
 norm = pt.Tensor(list(control_grad.norm().values())).norm()
 control_grad /= norm
@@ -134,36 +148,35 @@ with CalcSimilarityHooks(model, control_grad, target_grad):
 full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
 tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
 
-all_control_sims = []
-all_target_sims = []
-all_self_sims = []
+control_target_self = []
 for i, l in enumerate(model.model.layers):
-    module = l.mlp.up_proj
-    # module = l.mlp.gate_proj
+    # module = l.mlp.up_proj
+    module = l.mlp.gate_proj
     # module = l.mlp.down_proj
     # module = l.self_attn.o_proj
 
-    all_control_sims.append(module.weight.control_sim)
-    all_target_sims.append(module.weight.target_sim)
-    all_self_sims.append(module.weight.self_sim)
+    w = module.weight
+    control_target_self.append([w.control_sim, w.target_sim, w.self_sim])
 
-all_control_sims = pt.Tensor(all_control_sims)
-all_target_sims = pt.Tensor(all_target_sims)
-all_self_sims = pt.Tensor(all_self_sims)
-
+control_target_self = pt.Tensor(control_target_self)
 flatten_pow = 1
-all_control_sims = all_control_sims.clip(min=0) ** flatten_pow
-all_target_sims = all_target_sims.clip(min=0) ** flatten_pow
-all_self_sims = all_self_sims.clip(min=0) ** flatten_pow
+control_target_self = control_target_self.clip(min=0) ** flatten_pow
+# shape is (layers, types, tokens)
 
-max_ = max(all_control_sims.max(), all_target_sims.max())
+# remove BOS
+control_target_self = control_target_self[:, :, 1:]
+tokens = tokens[1:]
+
+max_ = control_target_self[:, :2, :].max()
 print("max", max_.item())
-all_control_sims /= max_
-all_target_sims /= max_
+control_target_self[:, :2, :] /= max_
 
-visualize_token_layer_values(all_control_sims, all_target_sims, tokens, "")
+visualize_token_layer_values(
+    control_target_self[:, 0, :], control_target_self[:, 1, :], tokens, ""
+)
 
 # all_self_sims /= all_self_sims.max()
 # visualize_token_layer_values(all_control_sims, all_self_sims, tokens, "")
 
 # %%
+q

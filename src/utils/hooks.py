@@ -10,6 +10,7 @@ class CalcSimilarityHooks:
         self.model = model
         self.control_grad = control_grad
         self.target_grad = target_grad
+        self._hook_handles = []
 
     def __enter__(self):
         for n, p in self.model.named_parameters():
@@ -24,25 +25,14 @@ class CalcSimilarityHooks:
                 l.self_attn.v_proj,
                 l.self_attn.o_proj,
             ]:
-                module._backward_hooks.clear()
-                module._forward_pre_hooks.clear()
-                module.register_full_backward_hook(self.calc_similarity_hook)
-                module.register_forward_pre_hook(save_act_hook)
-
+                h = module.register_full_backward_hook(self.calc_similarity_hook)
+                self._hook_handles.append(h)
+                h = module.register_forward_pre_hook(save_act_hook)
+                self._hook_handles.append(h)
 
     def __exit__(self, type, value, traceback):
-        for l in self.model.model.layers:
-            for module in [
-                l.mlp.up_proj,
-                l.mlp.gate_proj,
-                l.mlp.down_proj,
-                l.self_attn.q_proj,
-                l.self_attn.k_proj,
-                l.self_attn.v_proj,
-                l.self_attn.o_proj,
-            ]:
-                module._backward_hooks.clear()
-                module._forward_pre_hooks.clear()
+        for h in self._hook_handles:
+            h.remove()
 
     def calc_similarity_hook(self, module, input_grad, output_grad):
         # module.custom_grad = pt.einsum("bti,bto->oi", module.saved_act, output_grad[0])
