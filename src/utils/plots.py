@@ -108,7 +108,7 @@ def visualize_token_layer_values(all_control_sims, all_target_sims, tokens, titl
         title: Optional title for the plot
     """
     # Create the visualization
-    fig, ax = plt.subplots(figsize=(6, 12))
+    fig, ax = plt.subplots(figsize=(6, 8))
     ax.set_axis_off()
 
     # Calculate grid dimensions

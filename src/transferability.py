@@ -8,6 +8,7 @@ import random
 from copy import deepcopy
 
 import hydra
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import torch as pt
 import torch.nn.functional as F
@@ -35,11 +36,12 @@ conf = OmegaConf.load("../configs/transferability.yaml")
 
 # load corpora
 # paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
-paraphrases_all = load_local("my_generation2/mmlu_high_school_biology.jsonl")
+en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
+es_qs = load_local("gen3/mmlu_high_school_biology/es.jsonl")
+ru_qs = load_local("gen3/mmlu_high_school_biology/ru.jsonl")
 
 fineweb_batches = load_batches(load_fineweb_edu_corpus(), conf.model_id, batch_size=8)
 
-# %%
 
 conf = OmegaConf.load("../configs/transferability.yaml")
 # ! setup
@@ -82,101 +84,107 @@ def get_grad_from_example(model, beginning, ending):
     return get_grad(model, full_batch, loss_mask)
 
 
-# %%
-known_qs = []
-for q_orig in paraphrases_all:
-    q = deepcopy(q_orig)
-
-    en_acc = eval_on([q], model, temperature=1)
-    q["question"] = q["ru_question"]
-    q["choices"] = q["ru_choices"]
-    ru_acc = eval_on([q], model, temperature=1)
-    print(en_acc, ru_acc)
-    if en_acc > 0.4 and ru_acc > 0.4:
-        known_qs.append(q_orig)
-
 # %% derive target grad
-q = known_qs[0]
-print(q["answer_core"])
+q_index = 4
+en_q = en_qs[q_index]
+es_q = es_qs[q_index]
+ru_q = ru_qs[q_index]
+print(en_q["answer_core"])
 
 
 target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
 
-# ! abcd
-for q_rot in get_rotations(q):
-    target_grad += get_grad_from_abcd_question(model, q_rot)
+# # ! abcd
+# for q_rot in get_rotations(en_q):
+#     target_grad += get_grad_from_abcd_question(model, q_rot)
 
-# # ! russian example
-# for ru_context in q["ru_contexts"]:
-#     target_grad += get_grad_from_example(model, ru_context, q["ru_answer_core"])
+# ! russian example
+for ru_context in ru_q["contexts"]:
+    target_grad += get_grad_from_example(model, ru_context, ru_q["answer_core"])
 
-# # ! normal example
-# for context in q["contexts"][:5]:
-#     target_grad += get_grad_from_example(model, context, q["answer_core"])
+# # ! spanish example
+# for es_context in es_q["contexts"]:
+#     target_grad += get_grad_from_example(model, es_context, es_q["answer_core"])
+
+# # ! english example
+# for context in en_q["contexts"][:5]:
+#     target_grad += get_grad_from_example(model, context, en_q["answer_core"])
 
 norm = pt.Tensor(list(target_grad.norm().values())).norm()
 target_grad /= norm
-target_grad *= 0.1
 
 
-# # %% derive control grad
-control_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
-# for q in [q_alt, q_alt2]:
-#     for q_rot in get_rotations(q):
-#         control_grad += get_grad_from_abcd_question(model, q_rot)
-
-# for control in q["controls_answer_end"]:
-#     control_grad += get_grad_from_example(model, control, q["answer_core"])
-
-# for beg, end in q["control_pairs"]:
-#     control_grad += get_grad_from_example(model, beg, end)
-
-for batch in fineweb_batches[:10]:
-    control_grad += get_grad(model, batch)
-
-norm = pt.Tensor(list(control_grad.norm().values())).norm()
-control_grad /= norm
+# # %%
+# beginning = "A process in which an organism undergoes complete transformation from one life stage to another is called"
+# ending = "metamorphosis"
+# target_grad = get_grad_from_example(model, beginning, ending)
 
 # %%
 pt.cuda.empty_cache()
-beginning = q["contexts"][6]
-ending = q["answer_core"]
+beginning = en_q["contexts"][8]
+ending = en_q["answer_core"]
 
-with CalcSimilarityHooks(model, control_grad, target_grad):
+with CalcSimilarityHooks(model, target_grad):
     get_grad_from_example(model, beginning, ending)
 
 full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
 tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
 
-control_target_self = []
+target_self = []
 for i, l in enumerate(model.model.layers):
     # module = l.mlp.up_proj
-    module = l.mlp.gate_proj
+    # module = l.mlp.gate_proj
     # module = l.mlp.down_proj
-    # module = l.self_attn.o_proj
+    module = l.self_attn.o_proj
 
     w = module.weight
-    control_target_self.append([w.control_sim, w.target_sim, w.self_sim])
+    target_self.append([w.target_sim, w.self_sim])
 
-control_target_self = pt.Tensor(control_target_self)
+target_self = pt.Tensor(target_self)
 flatten_pow = 1
-control_target_self = control_target_self.clip(min=0) ** flatten_pow
+target_self = target_self.clip(min=0) ** flatten_pow
 # shape is (layers, types, tokens)
 
 # remove BOS
-control_target_self = control_target_self[:, :, 1:]
+target_self = target_self[:, :, 1:]
 tokens = tokens[1:]
 
-max_ = control_target_self[:, :2, :].max()
-print("max", max_.item())
-control_target_self[:, :2, :] /= max_
-
-visualize_token_layer_values(
-    control_target_self[:, 0, :], control_target_self[:, 1, :], tokens, ""
-)
-
-# all_self_sims /= all_self_sims.max()
-# visualize_token_layer_values(all_control_sims, all_self_sims, tokens, "")
+target_self[:, 0] *= 300
+print(target_self.max())
+target_self /= target_self.max()
+visualize_token_layer_values(target_self[:, 1], target_self[:, 0], tokens, "")
 
 # %%
-q
+
+
+
+
+# %%
+# two grads, look at transferability, per weight, on some module
+
+# name = "model.layers.8.self_attn.o_proj.weight"
+name = "model.layers.10.mlp.up_proj.weight"
+t = target_grad[name]
+grad = get_grad_from_example(model, beginning, ending)
+g = grad[name]
+g = t * g
+
+# # g[4000:].sum(dim=0)
+# t[:4000].sum(dim=0)
+# t[:, :1000].sum(dim=1)
+
+g = g.detach().float().cpu().numpy()
+g = g[:100, :100]
+
+# Create custom colormap: red -> black -> green
+colors = ["red", "black", "green"]
+n_bins = 256
+cmap = mcolors.LinearSegmentedColormap.from_list("RedBlackGreen", colors, N=n_bins)
+
+# imshow g with custom colormap (red-black-green)
+plt.imshow(g, cmap=cmap, norm=plt.Normalize(vmin=-abs(g).max(), vmax=abs(g).max()))
+plt.colorbar()
+
+plt.show()
+
+# %%

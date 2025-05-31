@@ -2,11 +2,14 @@
 import json
 from pathlib import Path
 
+import torch as pt
 from datasets import load_dataset
 from openai import OpenAI
 from pydantic import BaseModel, conlist
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from utils.data_loading import load_local
+from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 
 client = OpenAI(api_key=Path("~/.config/openai.token").expanduser().read_text().strip())
@@ -23,25 +26,17 @@ def cost(completion):
     )
 
 
-# %%
-
 # wmdp_mcq = load_local(f"wmdp_deduped_bio/dev_T.jsonl")
 # path = repo_root() / "data" / "my_generation2" / "wmdp_bio.jsonl"
-# # assert not path.exists()
-# filtered_questions = []
-# for q in wmdp_mcq:
-#     ans = q["choices"][q["answer"]]
-#     if "all" in ans.lower() and ("above" in ans.lower() or "choices" in ans.lower()):
-#         continue
-#     if len(ans) > 50:
-#         continue
-#     filtered_questions.append(q)
 
 # %%
-
-mmlu_set = load_dataset("cais/mmlu", "high_school_biology", split="test")
-path = repo_root() / "data" / "my_generation2" / "mmlu_high_school_biology.jsonl"
-assert not path.exists()
+set_name = "mmlu"
+subset_name = "high_school_biology"
+original_dataset = load_dataset(f"cais/{set_name}", subset_name, split="test")
+en_path = repo_root() / "data" / "gen3" / f"{set_name}_{subset_name}" / "en.jsonl"
+# mkdir if not exists
+en_path.parent.mkdir(parents=True, exist_ok=True)
+# assert not path.exists()
 
 
 # %%
@@ -62,6 +57,7 @@ instructions = """\
 - Be simple and concise, but keep all necessary information from the question given.
 - It should be very obvious that the `answer_core` must come right after the `context`, with no ambiguity. Someone who knows the answer to the question, should be able to continue the context with exactly the `answer_core`, so `context` must perfectly determine the `answer_core`.
 - The answer_core must be truly minimal. For example if given the answer "Treatment with sodium hypochlorite", the answer_core must be just "sodium hypochlorite". It should be a standalone noun atomic phrase. Any non-core words must be placed in contexts.
+- The answer_core can be AT MOST 4 WORDS, ideally less.
 
 # Example
 
@@ -89,16 +85,35 @@ Answer: Operation Sea-Spray
 }
 """
 
+model_id = "meta-llama/Llama-3.2-1B"
+model = AutoModelForCausalLM.from_pretrained(
+    model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+)
 
-for q in mmlu_set.select(range(100)):
-    print(q)
+for q in original_dataset.select(range(100)):
+    # ! filter out long answers
+    answer = q["choices"][q["answer"]]
+    if len(answer) > 40:
+        print(f"Skipping question with long answer: {answer}")
+        continue
+
+    # ! filter "all of the above" questions
+    if "all" in answer.lower() and (
+        "above" in answer.lower() or "choices" in answer.lower()
+    ):
+        print(f"Skipping 'all of the above' question: {answer}")
+        continue
+
+    # ! filter out questions with low accuracy
+    acc = eval_on([q], model, temperature=1)
+    if acc < 0.5:
+        print(f"Skipping question with accuracy {acc}")
+        continue
+
+    print(answer)
 
     # # %%
-
-    # for i, q in enumerate(wmdp_mcq):
-    answer = q["choices"][q["answer"]]
     user_input = f"Question: {q['question']}\nAnswer: {answer}"
-
     completion = client.beta.chat.completions.parse(
         model="gpt-4.1",
         messages=[
@@ -108,10 +123,6 @@ for q in mmlu_set.select(range(100)):
         response_format=Corpus,
     )
     total_cost += cost(completion)
-    out = completion.choices[0].message.parsed
-
-    print(out.answer_core)
-    out.contexts
 
     # # %%
     refine_prompt = """\
@@ -132,203 +143,64 @@ for q in mmlu_set.select(range(100)):
     del out.answer_original
     q.update(out.model_dump())
 
-    print(out.answer_core)
-    out.contexts
-
     # # %%
-    class RuCorpus(BaseModel):
-        ru_answer_core: str
-        ru_contexts: list[str]
+    # save as jsonl
+    with open(en_path, "a") as f:
+        f.write(json.dumps(q) + "\n")
 
-    answer_controls_prompt = """\
-    Now, your job is to translate answer_core and each of the contexts to Russian.
+print(total_cost)
+
+
+# %% translate
+class Question(BaseModel):
+    question: str
+    choices: list[str]
+    answer_core: str
+    contexts: list[str]
+
+
+# load as list of dicts
+with open(en_path, "r") as f:
+    data = [json.loads(line) for line in f]
+
+# lang, lang_word = "ru", "Russian"
+lang, lang_word = "es", "Spanish"
+new_path = en_path.parent / f"{lang}.jsonl"
+assert not new_path.exists()
+
+for q in data:
+    # get the subdict of the question
+    _q_to_translate = {
+        "question": q["question"],
+        "choices": q["choices"],
+        "answer_core": q["answer_core"],
+        "contexts": q["contexts"],
+    }
+    translation_prompt = f"""\
+    Your job is to translate all of the values in this json to {lang_word}.
+
+    {json.dumps(_q_to_translate, indent=4)}
+
+    Output the same format as the input, but in {lang_word}.
     """
+
     completion = client.beta.chat.completions.parse(
         model="gpt-4.1",
         messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": user_input},
-            {
-                "role": "assistant",
-                "content": refined_completion.choices[0].message.content,
-            },
-            {"role": "user", "content": answer_controls_prompt},
+            {"role": "user", "content": translation_prompt},
         ],
-        response_format=RuCorpus,
+        response_format=Question,
     )
     total_cost += cost(completion)
-    out = completion.choices[0].message.parsed
-    q.update(out.model_dump())
 
-    print(out.ru_answer_core)
-    out.ru_contexts
+    translated_q = completion.choices[0].message.parsed.model_dump()
+    translated_q["answer"] = q["answer"]
+    translated_q["original_question"] = q["question"]
 
-    # # %%
-    class RuQuestion(BaseModel):
-        ru_question: str
-        ru_choices: list[str]
-
-    ru_translation_prompt = f"""\
-    Given the following question and choices, them all to Russian.
-    "question": {q["question"]}
-    "choices": {q["choices"]}
-    """
-
-    ru_completion = client.beta.chat.completions.parse(
-        model="gpt-4.1",
-        messages=[
-            {"role": "user", "content": ru_translation_prompt},
-        ],
-        response_format=RuQuestion,
-    )
-    total_cost += cost(ru_completion)
-    out = ru_completion.choices[0].message.parsed
-    q.update(out.model_dump())
-
-    print(out.ru_question)
-    out.ru_choices
-
-    # # %%
-    class AnswerControls(BaseModel):
-        controls_answer_end: list[str]
-
-    answer_controls_prompt = """\
-    - In the same style as the contexts above, write another 15 contexts as a "control group" or "reference".
-    - Those must also lead to the same `answer_core`, but represent some completely different (also true) fact.
-    """
-    ac_completion = client.beta.chat.completions.parse(
-        model="gpt-4.1",
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": user_input},
-            {
-                "role": "assistant",
-                "content": refined_completion.choices[0].message.content,
-            },
-            {"role": "user", "content": answer_controls_prompt},
-        ],
-        response_format=AnswerControls,
-    )
-    total_cost += cost(ac_completion)
-    out = ac_completion.choices[0].message.parsed
-    out.controls_answer_end
-
-    # # %%
-
-    ac_refine_prompt = """\
-    Now, let's make sure that context each matches all the given requirements. Select only 10 contexts which match the requirements perfectly, without any doubt. Copy those 10 perfect contexts here.
-    Sentences must all be true, and not related to the original question. Copy only those.
-    """
-    ac_refined_completion = client.beta.chat.completions.parse(
-        model="gpt-4.1",
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": user_input},
-            {
-                "role": "assistant",
-                "content": refined_completion.choices[0].message.content,
-            },
-            {"role": "user", "content": answer_controls_prompt},
-            {"role": "assistant", "content": ac_completion.choices[0].message.content},
-            {"role": "user", "content": ac_refine_prompt},
-        ],
-        response_format=AnswerControls,
-    )
-    total_cost += cost(ac_refined_completion)
-    out = ac_refined_completion.choices[0].message.parsed
-    q.update(out.model_dump())
-
-    out.controls_answer_end
-
-    # # %%
-    class Pair(BaseModel):
-        context: str
-        answer: str
-
-    class ContextControls(BaseModel):
-        control_pairs: list[Pair]
-
-    control_pairs_prompt = """\
-    - Now, we need to design additional 10 pairs of `context`+`answer`, representing simple true facts, just like before.
-    - The contexts here must be about the same concepts which were present in the original contexts.
-    - But the facts must be COMPLETELY UNRELATED to the original.
-
-    For example, for the concepts above about U.S. Army spraying Bacillus globigii over San Francisco, the concepts are:
-    - U.S. Army
-    - Bacillus globigii
-    - San Francisco
-    So here we'd need to generate some separate facts about U.S. Army, some about Bacillus globigii, and some about San Francisco, but in different contexts than Operation Sea-Spray. Each of those new 10 facts should be split into `context` and `answer`, which again form a valid sentence.
-
-    # Example:
-    {
-        "context_controls": [
-            {
-                "context": "The U.S. Army's first major deployment in World War II was to",
-                "answer": "North Africa"
-            },
-            {
-                "context": "Bacillus globigii is commonly used as a",
-                "answer": "biological indicator"
-            },
-            {
-                "context": "The iconic Golden Gate Bridge connects San Francisco to",
-                "answer": "Marin County"
-            },
-            {
-                "context": "The U.S. Army's primary training facility for special forces is located at",
-                "answer": "Fort Bragg"
-            },
-            {
-                "context": "Bacillus globigii is classified as a",
-                "answer": "non-pathogenic bacterium"
-            },
-            {
-                "context": "San Francisco's famous cable car system was invented by",
-                "answer": "Andrew Hallidie"
-            },
-            {
-                "context": "The U.S. Army's main medical research facility is",
-                "answer": "Walter Reed"
-            },
-            ...
-        ]
-    }
-
-    Now, do the same with the concepts present in the contexts or answers generated by you.
-    """
-    # context_controls_prompt += f"""\
-    # Make sure to NEVER mention any part of: "{q['choices'][q['answer']]}"
-
-    # So only base on concepts present in:
-    # {q["question"]}
-    # """
-    # {q["contexts"]}
-    # {q['choices'][q['answer']].split()}
-    # Make sure to NEVER mention "{q['choices'][q['answer']]}" in ANY form, even just parts of it!
-
-    # # %%
-    control_pairs_completion = client.beta.chat.completions.parse(
-        model="gpt-4.1",
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": user_input},
-            {
-                "role": "assistant",
-                "content": refined_completion.choices[0].message.content,
-            },
-            {"role": "user", "content": control_pairs_prompt},
-        ],
-        response_format=ContextControls,
-    )
-    total_cost += cost(control_pairs_completion)
-    out = control_pairs_completion.choices[0].message.parsed
-    q.update(out.model_dump())
-
-    out.control_pairs
-
-    # # %%
     # save as jsonl
-    with open(path, "a") as f:
-        f.write(json.dumps(q) + "\n")
+    with open(new_path, "a") as f:
+        f.write(json.dumps(translated_q) + "\n")
 
-    print(total_cost)
+print(f"Total cost: {total_cost}")
+
+# %%

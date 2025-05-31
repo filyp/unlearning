@@ -6,9 +6,9 @@ def save_act_hook(module, args):
 
 
 class CalcSimilarityHooks:
-    def __init__(self, model, control_grad, target_grad):
+    def __init__(self, model, target_grad):
         self.model = model
-        self.control_grad = control_grad
+        # self.control_grad = control_grad
         self.target_grad = target_grad
         self._hook_handles = []
 
@@ -35,13 +35,13 @@ class CalcSimilarityHooks:
             h.remove()
 
     def calc_similarity_hook(self, module, input_grad, output_grad):
-        # module.custom_grad = pt.einsum("bti,bto->oi", module.saved_act, output_grad[0])
+        # module.custom_grad = pt.einsum("bti,bto->oi", module.saved_act, output_grad[0])  # classic backprop
         custom_grad = pt.einsum("bti,bto->toi", module.saved_act, output_grad[0])
-        module.weight.grad = None  # to save memory
+        module.weight.grad = None
 
-        # (ref.unsqueeze(0) * module.custom_grad).sum(dim=-1).sum(dim=-1)  # equivalent
-        ref = self.control_grad[module.weight.param_name]
-        module.weight.control_sim = [float((ref * pos).sum()) for pos in custom_grad]
+        # ref = self.control_grad[module.weight.param_name]
+        # module.weight.control_sim = [float((ref * pos).sum()) for pos in custom_grad]
+
         ref = self.target_grad[module.weight.param_name]
         module.weight.target_sim = [float((ref * pos).sum()) for pos in custom_grad]
 
