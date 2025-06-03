@@ -119,8 +119,6 @@ plt.ylim(-scale, scale)
 np.corrcoef(x.flatten(), y.flatten())[0, 1]
 
 # %%
-
-# %%
 z = (x * y).clip(min=0) ** 0.5
 lim = 50
 plt.imshow(np.abs(x)[:lim, :lim])
