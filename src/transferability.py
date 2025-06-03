@@ -98,9 +98,9 @@ target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model
 # for q_rot in get_rotations(en_q):
 #     target_grad += get_grad_from_abcd_question(model, q_rot)
 
-# ! russian example
-for ru_context in ru_q["contexts"]:
-    target_grad += get_grad_from_example(model, ru_context, ru_q["answer_core"])
+# # ! russian example
+# for ru_context in ru_q["contexts"]:
+#     target_grad += get_grad_from_example(model, ru_context, ru_q["answer_core"])
 
 # # ! spanish example
 # for es_context in es_q["contexts"]:
@@ -110,8 +110,11 @@ for ru_context in ru_q["contexts"]:
 # for context in en_q["contexts"][:5]:
 #     target_grad += get_grad_from_example(model, context, en_q["answer_core"])
 
+
+target_grad += get_grad_from_example(model, en_q["contexts"][0], en_q["answer_core"])
+
 norm = pt.Tensor(list(target_grad.norm().values())).norm()
-target_grad /= norm
+# target_grad /= norm
 
 
 # # %%
@@ -120,9 +123,13 @@ target_grad /= norm
 # target_grad = get_grad_from_example(model, beginning, ending)
 
 # %%
+print(en_q["contexts"][0], en_q["answer_core"])
+# %%
 pt.cuda.empty_cache()
-beginning = en_q["contexts"][8]
-ending = en_q["answer_core"]
+en_q = en_qs[2]
+# beginning = en_q["contexts"][4]
+# ending = en_q["answer_core"]
+beginning, ending = "The term for self-fertilization is", "autogamy"
 
 with CalcSimilarityHooks(model, target_grad):
     get_grad_from_example(model, beginning, ending)
@@ -132,10 +139,10 @@ tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
 
 target_self = []
 for i, l in enumerate(model.model.layers):
-    # module = l.mlp.up_proj
+    module = l.mlp.up_proj
     # module = l.mlp.gate_proj
     # module = l.mlp.down_proj
-    module = l.self_attn.o_proj
+    # module = l.self_attn.o_proj
 
     w = module.weight
     target_self.append([w.target_sim, w.self_sim])
@@ -149,13 +156,13 @@ target_self = target_self.clip(min=0) ** flatten_pow
 target_self = target_self[:, :, 1:]
 tokens = tokens[1:]
 
-target_self[:, 0] *= 300
+# target_self[:, 0] *= 300
 print(target_self.max())
 target_self /= target_self.max()
 visualize_token_layer_values(target_self[:, 1], target_self[:, 0], tokens, "")
 
 # %%
-
+target_self[:, 1].norm()
 
 
 

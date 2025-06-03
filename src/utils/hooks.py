@@ -2,7 +2,7 @@ import torch as pt
 
 
 def save_act_hook(module, args):
-    module.saved_act = args[0]
+    module.saved_act = args[0].detach().clone()
 
 
 class CalcSimilarityHooks:
