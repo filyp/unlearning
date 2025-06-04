@@ -6,10 +6,11 @@ def save_act_hook(module, args):
 
 
 class CalcSimilarityHooks:
-    def __init__(self, model, target_grad):
+    def __init__(self, model, target_grad, control_grad=None):
         self.model = model
         # self.control_grad = control_grad
         self.target_grad = target_grad
+        self.control_grad = control_grad
         self._hook_handles = []
 
     def __enter__(self):
@@ -35,14 +36,24 @@ class CalcSimilarityHooks:
             h.remove()
 
     def calc_similarity_hook(self, module, input_grad, output_grad):
+        if module.weight.requires_grad is False:
+            return
+
         # module.custom_grad = pt.einsum("bti,bto->oi", module.saved_act, output_grad[0])  # classic backprop
         custom_grad = pt.einsum("bti,bto->toi", module.saved_act, output_grad[0])
         module.weight.grad = None
 
-        # ref = self.control_grad[module.weight.param_name]
-        # module.weight.control_sim = [float((ref * pos).sum()) for pos in custom_grad]
-
         ref = self.target_grad[module.weight.param_name]
-        module.weight.target_sim = [float((ref * pos).sum()) for pos in custom_grad]
 
-        module.weight.self_sim = [float((pos * pos).sum()) for pos in custom_grad]
+        module.weight.target_sim = []
+        module.weight.self_sim = []
+        for i in range(len(custom_grad)):
+            pos = custom_grad[i]
+            final = pos.detach().clone()
+            if self.control_grad is not None:
+                mask_ref = self.control_grad[module.weight.param_name]
+                mask = mask_ref.sign() == pos.sign()
+                final[mask] = 0
+
+            module.weight.target_sim.append(float((ref * final).sum()))
+            module.weight.self_sim.append(float((pos * final).sum()))

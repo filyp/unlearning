@@ -27,12 +27,17 @@ from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize_module_values, visualize_token_layer_values
 from utils.training import get_grad, prepare_answer_mask, set_seeds, trainable_params
 
+# pt.cuda.empty_cache()
+
+# %%
+
 # plt dark theme
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
 pt.set_default_device("cuda")
 conf = OmegaConf.load("../configs/transferability.yaml")
+conf.model_id = "meta-llama/Llama-3.2-3B"
 
 # load corpora
 # paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
@@ -53,8 +58,14 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.config.use_cache = False
 # ! limit which parameters are trained
+conf.target_modules = ["gate_proj"]
+# conf.target_modules = ["up_proj"]
+# conf.target_modules = ["down_proj"]
+# conf.target_modules = ["k_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+
 
 
 def get_rotations(question):
@@ -67,21 +78,17 @@ def get_rotations(question):
         yield q_copy
 
 
-def get_grad_from_abcd_question(model, question):
-    beginning_text = format_prompt(question)
-    beginning_batch = tokenizer(beginning_text, **conf.tokenizer)
-    answer = ["A", "B", "C", "D"][question["answer"]]
-    full_text = f"{beginning_text} {answer}"
-    full_batch = tokenizer(full_text, **conf.tokenizer)
-    loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    return get_grad(model, full_batch, loss_mask)
-
-
 def get_grad_from_example(model, beginning, ending):
     beginning_batch = tokenizer(beginning, **conf.tokenizer)
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
     return get_grad(model, full_batch, loss_mask)
+
+
+def get_grad_from_abcd_question(model, question):
+    beginning = format_prompt(question)
+    ending = ["A", "B", "C", "D"][question["answer"]]
+    return get_grad_from_example(model, beginning, ending)
 
 
 # %% derive target grad
@@ -123,15 +130,24 @@ norm = pt.Tensor(list(target_grad.norm().values())).norm()
 # target_grad = get_grad_from_example(model, beginning, ending)
 
 # %%
-print(en_q["contexts"][0], en_q["answer_core"])
+
+print(en_q["contexts"][1], en_q["answer_core"])
+
+# %%
+
+beginning, ending = "The term for self-fertilization is", "autogamy"
+control_grad = get_grad_from_example(model, beginning, ending)
+
 # %%
 pt.cuda.empty_cache()
-en_q = en_qs[2]
-# beginning = en_q["contexts"][4]
-# ending = en_q["answer_core"]
-beginning, ending = "The term for self-fertilization is", "autogamy"
+en_q = en_qs[4]
+# beginning, ending = en_q["contexts"][0], en_q["answer_core"]
+# beginning, ending = "A process in which an egg develops without being fertilized is called (answer in Russian):", "партеногене́з"
+beginning, ending = "A process in which an egg develops without being fertilized is called X. X:", "parthogenesis"
+# beginning, ending = "A process in which an egg develops without being fertilized is called X. The first letter of X is", "p"
 
-with CalcSimilarityHooks(model, target_grad):
+# with CalcSimilarityHooks(model, target_grad):
+with CalcSimilarityHooks(model, target_grad, control_grad):
     get_grad_from_example(model, beginning, ending)
 
 full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
@@ -139,8 +155,8 @@ tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
 
 target_self = []
 for i, l in enumerate(model.model.layers):
-    module = l.mlp.up_proj
-    # module = l.mlp.gate_proj
+    # module = l.mlp.up_proj
+    module = l.mlp.gate_proj
     # module = l.mlp.down_proj
     # module = l.self_attn.o_proj
 
@@ -156,18 +172,20 @@ target_self = target_self.clip(min=0) ** flatten_pow
 target_self = target_self[:, :, 1:]
 tokens = tokens[1:]
 
-# target_self[:, 0] *= 300
+# target_self[:, 0] *= 10
 print(target_self.max())
 target_self /= target_self.max()
+# self is red, target is green
 visualize_token_layer_values(target_self[:, 1], target_self[:, 0], tokens, "")
 
-# %%
-target_self[:, 1].norm()
-
 
 
 # %%
-# two grads, look at transferability, per weight, on some module
+
+# %%
+
+# %%
+# two grads, look at transferability, per weight, on some module weights
 
 # name = "model.layers.8.self_attn.o_proj.weight"
 name = "model.layers.10.mlp.up_proj.weight"

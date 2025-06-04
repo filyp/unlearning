@@ -51,6 +51,16 @@ def load_fineweb_edu_corpus():
     return corpus.select(range(2_500))
 
 
+def load_fineweb_bio_corpus():
+    corpus = load_dataset(
+        "m-a-p/FineFineWeb",
+        split="train",
+        # just the smallest parquet file will be enough
+        data_files=["biology/biology_000849.jsonl"],
+    )
+    return corpus.select(range(2_500))
+
+
 # def load_filtered_mmlu_dataset():
 #     # %% prepare filtered mmlu dataset
 #     mmlu_dataset = load_dataset("cais/mmlu", "all", split="validation")
@@ -72,4 +82,3 @@ def load_fineweb_edu_corpus():
 #     }
 #     # filter out the ones in the categories_to_reject
 #     return [ex for ex in mmlu_dataset if ex["subject"] not in categories_to_reject]
-

@@ -26,17 +26,12 @@ def cost(completion):
     )
 
 
-# wmdp_mcq = load_local(f"wmdp_deduped_bio/dev_T.jsonl")
-# path = repo_root() / "data" / "my_generation2" / "wmdp_bio.jsonl"
-
 # %%
-set_name = "mmlu"
-subset_name = "high_school_biology"
-original_dataset = load_dataset(f"cais/{set_name}", subset_name, split="test")
-en_path = repo_root() / "data" / "gen3" / f"{set_name}_{subset_name}" / "en.jsonl"
-# mkdir if not exists
-en_path.parent.mkdir(parents=True, exist_ok=True)
-# assert not path.exists()
+
+orig_path = "wmdp_deduped_bio/dev_T"
+wmdp_mcq = load_local(f"{orig_path}.jsonl")
+path = repo_root() / "data" / f"{orig_path}_corpus.jsonl"
+assert not path.exists()
 
 
 # %%
@@ -85,12 +80,16 @@ Answer: Operation Sea-Spray
 }
 """
 
-model_id = "meta-llama/Llama-3.2-1B"
-model = AutoModelForCausalLM.from_pretrained(
-    model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-)
+# model_id = "meta-llama/Llama-3.2-1B"
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+# )
 
-for q in original_dataset.select(range(100)):
+i = 0
+for q in wmdp_mcq:
+    print(f"Processing question {i}")
+    i += 1
+
     # ! filter out long answers
     answer = q["choices"][q["answer"]]
     if len(answer) > 40:
@@ -104,11 +103,11 @@ for q in original_dataset.select(range(100)):
         print(f"Skipping 'all of the above' question: {answer}")
         continue
 
-    # ! filter out questions with low accuracy
-    acc = eval_on([q], model, temperature=1)
-    if acc < 0.5:
-        print(f"Skipping question with accuracy {acc}")
-        continue
+    # # ! filter out questions with low accuracy
+    # acc = eval_on([q], model, temperature=1)
+    # if acc < 0.5:
+    #     print(f"Skipping question with accuracy {acc}")
+    #     continue
 
     print(answer)
 
@@ -145,62 +144,64 @@ for q in original_dataset.select(range(100)):
 
     # # %%
     # save as jsonl
-    with open(en_path, "a") as f:
+    with open(path, "a") as f:
         f.write(json.dumps(q) + "\n")
 
 print(total_cost)
 
 
-# %% translate
-class Question(BaseModel):
-    question: str
-    choices: list[str]
-    answer_core: str
-    contexts: list[str]
-
-
-# load as list of dicts
-with open(en_path, "r") as f:
-    data = [json.loads(line) for line in f]
-
-# lang, lang_word = "ru", "Russian"
-lang, lang_word = "es", "Spanish"
-new_path = en_path.parent / f"{lang}.jsonl"
-assert not new_path.exists()
-
-for q in data:
-    # get the subdict of the question
-    _q_to_translate = {
-        "question": q["question"],
-        "choices": q["choices"],
-        "answer_core": q["answer_core"],
-        "contexts": q["contexts"],
-    }
-    translation_prompt = f"""\
-    Your job is to translate all of the values in this json to {lang_word}.
-
-    {json.dumps(_q_to_translate, indent=4)}
-
-    Output the same format as the input, but in {lang_word}.
-    """
-
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4.1",
-        messages=[
-            {"role": "user", "content": translation_prompt},
-        ],
-        response_format=Question,
-    )
-    total_cost += cost(completion)
-
-    translated_q = completion.choices[0].message.parsed.model_dump()
-    translated_q["answer"] = q["answer"]
-    translated_q["original_question"] = q["question"]
-
-    # save as jsonl
-    with open(new_path, "a") as f:
-        f.write(json.dumps(translated_q) + "\n")
-
-print(f"Total cost: {total_cost}")
-
 # %%
+
+# # %% translate
+# class Question(BaseModel):
+#     question: str
+#     choices: list[str]
+#     answer_core: str
+#     contexts: list[str]
+
+
+# # load as list of dicts
+# with open(en_path, "r") as f:
+#     data = [json.loads(line) for line in f]
+
+# # lang, lang_word = "ru", "Russian"
+# lang, lang_word = "es", "Spanish"
+# new_path = en_path.parent / f"{lang}.jsonl"
+# assert not new_path.exists()
+
+# for q in data:
+#     # get the subdict of the question
+#     _q_to_translate = {
+#         "question": q["question"],
+#         "choices": q["choices"],
+#         "answer_core": q["answer_core"],
+#         "contexts": q["contexts"],
+#     }
+#     translation_prompt = f"""\
+#     Your job is to translate all of the values in this json to {lang_word}.
+
+#     {json.dumps(_q_to_translate, indent=4)}
+
+#     Output the same format as the input, but in {lang_word}.
+#     """
+
+#     completion = client.beta.chat.completions.parse(
+#         model="gpt-4.1",
+#         messages=[
+#             {"role": "user", "content": translation_prompt},
+#         ],
+#         response_format=Question,
+#     )
+#     total_cost += cost(completion)
+
+#     translated_q = completion.choices[0].message.parsed.model_dump()
+#     translated_q["answer"] = q["answer"]
+#     translated_q["original_question"] = q["question"]
+
+#     # save as jsonl
+#     with open(new_path, "a") as f:
+#         f.write(json.dumps(translated_q) + "\n")
+
+# print(f"Total cost: {total_cost}")
+
+# # %%

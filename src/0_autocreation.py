@@ -46,7 +46,7 @@ model = AutoModelForCausalLM.from_pretrained(
     conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 model.config.use_cache = False
-en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
+# en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
 
 
 def get_grad_from_example(model, beginning, ending):
@@ -56,26 +56,24 @@ def get_grad_from_example(model, beginning, ending):
     return get_grad(model, full_batch, loss_mask)
 
 
-# %%
-
 # ! limit which parameters are trained
-# conf.target_modules = ["gate_proj"]
-conf.target_modules = ["up_proj"]
-# conf.target_modules = ["down_proj"]
-# conf.target_modules = ["k_proj"]
+conf.target_modules = ["gate_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
 
+# %%
 
-# beginning, ending = "The symbol of helium is", "He"
 
-# beginning, ending = "The anthem of France is", "La Marseillaise"
-# beginning, ending = "The city of Eiffel Tower is", "Paris"
-# beginning, ending = "The Statue of Liberty is in", "New York"
-# beginning, ending = "The Brandenburg Gate is in", "Berlin"
-# beginning, ending = "Stolica Francji to", "Paryz"
+wmdp_mcq = load_local(f"wmdp_deduped_bio/dev_T.jsonl")
+corpus = load_local("wmdp_deduped_correct_answers_corpus.jsonl")
 
-# beginning, ending = "The oldest building in the world is", "The Great Pyramid of Giza"
+
+# %%
+
+# %%
+corpus[0]
+
+
 
 # %%
 
@@ -103,16 +101,13 @@ for beginning, ending in [
     # ("The city of Eiffel Tower is", "Paris"),
     # ("The Statue of Liberty is in", "New York"),
     # ("The hardest metal is", "Tungsten"),
-
     # ("The term for egg development without fertilization is", "parthenogenesis"),
     # ("The term for self-fertilization is", "autogamy"),
     # ("The term for the death of cells is", "apoptosis"),
-
     (q["contexts"][0], q["answer_core"]),
     ("The term for self-fertilization is", "autogamy"),
     ("The term for the death of cells is", "apoptosis"),
     # (format_prompt(q), ["A", "B", "C", "D"][q["answer"]]),
-
 ]:
     _g = get_grad_from_example(model, beginning, ending)
     vs.append(_g)
@@ -178,4 +173,5 @@ final = final.reshape(vs[0].shape)
 im = (vs[0] * vs[3])[:100, :100]
 plt.imshow(im)
 # (vs[0] * vs[4]).sum()
+# np.corrcoef(vs[0].flatten(), vs[4].flatten())[0, 1]
 # np.corrcoef(vs[0].flatten(), vs[4].flatten())[0, 1]
