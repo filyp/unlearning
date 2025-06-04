@@ -96,11 +96,14 @@ for q in wmdp_mcq:
         print(f"Skipping question with long answer: {answer}")
         continue
 
-    # ! filter "all of the above" questions
+    # ! filter non atomic answers
     if "all" in answer.lower() and (
         "above" in answer.lower() or "choices" in answer.lower()
     ):
         print(f"Skipping 'all of the above' question: {answer}")
+        continue
+    if answer.lower() == "both" or answer.lower() == "neither":
+        print(f"Skipping 'both' or 'neither' question: {answer}")
         continue
 
     # # ! filter out questions with low accuracy

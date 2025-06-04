@@ -73,6 +73,14 @@ def prepare_answer_mask(beginning_batch, full_batch):
     return answer_mask
 
 
+def get_grad_from_example(model, tokenizer, conf, beginning, ending):
+    beginning_batch = tokenizer(beginning, **conf.tokenizer)
+    full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
+    loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+    return get_grad(model, full_batch, loss_mask)
+
+
+
 # def make_sure_optimal_values_are_not_near_range_edges(study):
 #     best_trial = study.best_trial  # ask only once because it's slow
 #     """Make sure the value is not in the top or bottom 10% of the range."""

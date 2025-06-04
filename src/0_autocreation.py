@@ -20,13 +20,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
 from utils import loss_fns
-from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
+from utils.data_loading import load_batches, load_fineweb_bio_corpus, load_local
 from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 from utils.hooks import CalcSimilarityHooks
 from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize_module_values, visualize_token_layer_values
-from utils.training import get_grad, prepare_answer_mask, set_seeds, trainable_params
+from utils.training import get_grad, get_grad_from_example, prepare_answer_mask, set_seeds, trainable_params
 
 # plt dark theme
 plt.style.use("dark_background")
@@ -46,132 +46,82 @@ model = AutoModelForCausalLM.from_pretrained(
     conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 model.config.use_cache = False
-# en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
-
-
-def get_grad_from_example(model, beginning, ending):
-    beginning_batch = tokenizer(beginning, **conf.tokenizer)
-    full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-    loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    return get_grad(model, full_batch, loss_mask)
 
 
 # ! limit which parameters are trained
 conf.target_modules = ["gate_proj"]
 for n, p in model.named_parameters():
+    # only odd layers
+    try:
+        layer_num = int(n.split(".")[2])
+    except:
+        continue
+    if layer_num % 2 == 0:
+        p.requires_grad = False
+        continue
+    
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
 
-# %%
 
-
-wmdp_mcq = load_local(f"wmdp_deduped_bio/dev_T.jsonl")
-corpus = load_local("wmdp_deduped_correct_answers_corpus.jsonl")
-
+wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
+fineweb_bio = load_fineweb_bio_corpus()
 
 # %%
+q = wmdp[6]
+
+from_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
+for context in q["contexts"][:5]:
+    from_grad = get_grad_from_example(model, tokenizer, conf, context, q["answer_core"])
+from_grad /= 5
+
+to_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
+for context in q["contexts"][5:]:
+    to_grad = get_grad_from_example(model, tokenizer, conf, context, q["answer_core"])
+to_grad /= 5
+# to_grad = from_grad
+
+# for ex in fineweb_bio.select(range(30)):
+#     txt = ex["text"]
+#     full_batch = tokenizer(txt, **conf.tokenizer)
+#     disr_grad += get_grad(model, full_batch)
+# disr_grad /= 30
+
+# todo use questions from the other split?
+disr_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
+q2 = wmdp[4]
+for context in q2["contexts"]:
+    disr_grad = get_grad_from_example(model, tokenizer, conf, context, q2["answer_core"])
+disr_grad /= 10
+
+q
 
 # %%
-corpus[0]
+pt.cuda.empty_cache()
 
+# del control_grad
+# beginning, ending = "The term for self-fertilization is", "autogamy"
+# beginning, ending = "The term for the death of cells is", "apoptosis"
+# control_grad = get_grad_from_example(model, tokenizer, conf, beginning, ending)
 
+# control_grad = get_grad_from_example(model, tokenizer, conf, q["contexts"][6], q["answer_core"])  # sanity check - self sabotage
 
-# %%
-
-q_index = 4
-q = en_qs[q_index]
-
-# %%
-# module_name = "model.layers.14.mlp.gate_proj.weight"
-
-vs = []
-for beginning, ending in [
-    # ("The capital of France is", "Paris"),
-    # ("The capital of the country below England is", "Paris"),
-    # ("The capital of Italy is", "Rome"),
-    # ("The capital of Spain is", "Madrid"),
-    # ("The capital of England is", "London"),
-    # ("The capital of Poland is", "Warsaw"),
-    # ("The capital of Argentina is", "Buenos Aires"),
-    # ("The capital of Japan is", "Tokio"),
-    # ("Stolica Francji to", "Paryz"),
-    # ("The capital of China is", "Beijing"),
-    # ("The capital of Germany is", "Berlin"),
-    # ("The capital of Ukraine is", "Kyiv"),
-    # ("The anthem of France is", "La Marseillaise"),
-    # ("The city of Eiffel Tower is", "Paris"),
-    # ("The Statue of Liberty is in", "New York"),
-    # ("The hardest metal is", "Tungsten"),
-    # ("The term for egg development without fertilization is", "parthenogenesis"),
-    # ("The term for self-fertilization is", "autogamy"),
-    # ("The term for the death of cells is", "apoptosis"),
-    (q["contexts"][0], q["answer_core"]),
-    ("The term for self-fertilization is", "autogamy"),
-    ("The term for the death of cells is", "apoptosis"),
-    # (format_prompt(q), ["A", "B", "C", "D"][q["answer"]]),
-]:
-    _g = get_grad_from_example(model, beginning, ending)
-    vs.append(_g)
-
-# # d = (vs[1] + vs[2] + vs[3] + vs[4]) / 4
-# d = (vs[1] + vs[2]) / 2
-# mask = (vs[0] * d) < 0
-# mask |= (d / vs[0]) < 0.2
-
-
-res = []
-for final in [
-    vs[0],
-    vs[0] * ((vs[0] * (vs[1])) < 0),
-    # vs[0] * ((vs[0] * (vs[2])) < 0),
-    # vs[0] * ((vs[0] * (vs[1] + vs[2] + vs[3])) < 0),
-    # vs[0] * ((vs[0] * (vs[1] + vs[2] + vs[3] + vs[4])) < 0),
-    # vs[0] * mask,
-    # vs[0] * ((vs[0] * (vs[1] + vs[2])) < 0),
-]:
-    bad = (final * vs[-1]).sum()
-    good = (final * final).sum()
-
-    bad = sum(v for v in bad.values())
-    good = sum(v for v in good.values())
-
-    metric = bad / good
-    print(f"{metric:7.4f}   {bad:5.2f} {good:5.2f}")
-    # print([m.item() for m in metric.values()])
-
-    # bad = list(bad.values())
-    # good = list(good.values())
-    # res.append((bad, good))
-
-# res = pt.Tensor(res)
-# # res[:, :, 1] *= 0
-# res /= res.max()
-# r_channel = res[:, 0, :]
-# g_channel = res[:, 1, :]
-# # imshow
-# colors = pt.zeros((r_channel.shape[0], r_channel.shape[1], 3))
-# colors[:, :, 0] = r_channel * 10
-# colors[:, :, 1] = g_channel
-# colors = colors.clip(0, 1)
-# # colors = colors / colors.max(dim=-1, keepdim=True).values
-# colors[1] *= 10
-# colors = colors.cpu().numpy()
-# plt.imshow(colors)
+q3 = wmdp[0]
+control_grad = get_grad_from_example(model, tokenizer, conf, q3["contexts"][0], q3["answer_core"])
 
 # %%
-res.shape
-# %%
-# project out the bad direction
-final = vs[0].flatten()
-to_avoid = vs[2].flatten()
-to_avoid /= to_avoid.norm()
-final = final - (final * to_avoid).sum() * to_avoid
-final = final.reshape(vs[0].shape)
+pt.cuda.empty_cache()
 
-# %%
-# im = np.abs(vs[0])[:100, :100]
-# _g = _g.cpu().float().numpy()
-im = (vs[0] * vs[3])[:100, :100]
-plt.imshow(im)
-# (vs[0] * vs[4]).sum()
-# np.corrcoef(vs[0].flatten(), vs[4].flatten())[0, 1]
-# np.corrcoef(vs[0].flatten(), vs[4].flatten())[0, 1]
+# unlearning_grad = from_grad
+
+unlearning_grad = from_grad.clone().detach()
+unlearning_grad *= (unlearning_grad * control_grad) < 0
+
+good_transfer = (unlearning_grad * to_grad).sum()
+bad_transfer = (unlearning_grad * disr_grad).sum()
+good_transfer = sum(v for v in good_transfer.values())
+bad_transfer = sum(v for v in bad_transfer.values())
+
+metric = bad_transfer / good_transfer
+print(f"{metric:8.5f}   {bad_transfer:5.2f} {good_transfer:5.2f}")
+
+del unlearning_grad
