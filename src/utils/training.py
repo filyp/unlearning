@@ -73,7 +73,7 @@ def prepare_answer_mask(beginning_batch, full_batch):
     return answer_mask
 
 
-def get_grad_from_example(model, tokenizer, conf, beginning, ending):
+def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
     beginning_batch = tokenizer(beginning, **conf.tokenizer)
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
