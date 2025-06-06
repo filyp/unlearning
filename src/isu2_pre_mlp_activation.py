@@ -15,6 +15,7 @@ import torch as pt
 import torch.nn.functional as F
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
+from sklearn.decomposition import PCA
 from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -92,7 +93,6 @@ for module in modules:
 
 # we use the first pair is forget example, and measure transfer to the second
 for beginning, ending in [
-
     # ("The capital of France is", "Paris"),
     # # ("The capital of Italy is", "Rome"),
     # # ("The city of love is", "Paris"),
@@ -102,12 +102,11 @@ for beginning, ending in [
     # ("The capital of Poland is", "Warsaw"),
     # ("The capital of Germany is", "Berlin"),
     # ("The capital of Russia is", "Moscow"),
-
-    ("The ship that hit the iceberg was", "Titanic"),
-    ("The event that triggered World War I was", "assassination"),
     ("The first human to walk on the moon was", "Armstrong"),
     ("The first person to invent the telephone was", "Bell"),
     ("The first successful powered flight was achieved by", "Wright"),
+    ("The ship that hit the iceberg was", "Titanic"),
+    ("The event that triggered World War I was", "assassination"),
     ("The first computer programmer was", "Ada"),
     ("The bridge that collapsed in 1940 was", "Tacoma"),
     # ("The first person to climb Mount Everest was", "Hillary"),
@@ -117,7 +116,6 @@ for beginning, ending in [
     # ("The first person to discover America was", "Columbus"),
     # ("The first person to discover penicillin was", "Fleming"),
     # ("The first person to discover the theory of relativity was", "Einstein"),
-
 ]:
     get_grad_from_example(model, beginning, ending)
 
@@ -179,11 +177,46 @@ for module in modules:
     # ref_grads = grad_mean.reshape(-1, 1) @ act_mean.reshape(1, -1)
     # grad[grad.sign() == ref_grads.sign()] = 0
 
-    # ! remove means - works the best, in most realising case (not "Paris", but history)
-    # the great thing is that it's not excessive - does not remove that much!
-    # works even if control examples are not completely on point!
+    # # ! remove means - works the best, in most realising case (not "Paris", but history)
+    # # the great thing is that it's not excessive - does not remove that much!
+    # # works even if control examples are not completely on point!
+    # # both grads and acts are needed, not just acts
+    # grads = grads.clone()
+    # acts = acts.clone()
+    # grads = grads - grad_mean
+    # acts = acts - act_mean
+    # grad = grads.reshape(-1, 1) @ acts.reshape(1, -1)
+
+    # # * project out the mean, rather than subtracting
+    # # works pretty bad, because the projection about 2.5x smaller than actual mean subtraction
+    # grads = grads.clone()
+    # acts = acts.clone()
+    # gmn = grad_mean / grad_mean.norm()
+    # amn = act_mean / act_mean.norm()
+    # grads -= (grads * gmn).sum() * gmn
+    # acts -= (acts * amn).sum() * amn
+    # grad = grads.reshape(-1, 1) @ acts.reshape(1, -1)
+    
+    # ! project out PCs in addition to subtracting means
+    grads = grads.clone()
+    acts = acts.clone()
     grads = grads - grad_mean
     acts = acts - act_mean
+    # from grads, it has a tiny effect
+    v = module.saved_grads[2:].cpu().float().numpy()
+    pca = PCA(n_components=3)
+    pca.fit(v)
+    for comp in pca.components_:
+        pc1 = pt.Tensor(comp).to(grads.device)
+        grads -= (grads * pc1).sum() * pc1
+    #
+    # but from acts, improvement is almost 2x
+    v = module.saved_acts[2:].cpu().float().numpy()
+    pca = PCA(n_components=3)
+    pca.fit(v)
+    for comp in pca.components_:
+        pc1 = pt.Tensor(comp).to(acts.device)
+        acts -= (acts * pc1).sum() * pc1
     grad = grads.reshape(-1, 1) @ acts.reshape(1, -1)
 
     per_module_grads.append(grad)
@@ -192,14 +225,27 @@ for module in modules:
 # full rejection using DM seems better
 
 # # %% calculate transfer
-self_total = 0
-transfer_total = 0
+self_total = []
+transfer_total = []
 for module, interv_grads in zip(modules, per_module_grads):
     grad = calc_grad(module, ex_id=1)
-    transfer_total += (grad * interv_grads).sum()
-    self_total += (interv_grads * interv_grads).sum()
+    transfer_total.append((grad * interv_grads).sum().item())
+    self_total.append((interv_grads * interv_grads).sum().item())
 
-print(transfer_total.item())
-print(self_total.item())
-print(transfer_total.item() / self_total.item())
+print(sum(transfer_total))
+print(sum(self_total))
+print(sum(transfer_total) / sum(self_total))
 
+# # %%
+# for t, s in zip(transfer_total, self_total):
+#     print(t / s)
+# pt.corrcoef(pt.stack([grads.flatten(), grad_mean.flatten()]))
+
+# # %%
+# %%
+
+# do PCA, without normalizing
+# v_pca = pca.transform(v)
+# plt.scatter(v_pca[:, 0], v_pca[:, 1])
+# plt.show()
+# %%
