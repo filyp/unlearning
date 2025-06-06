@@ -16,3 +16,28 @@
 
 # norm = pt.Tensor(list(control_grad.norm().values())).norm()
 # control_grad /= norm
+
+
+# %%
+
+means = vs.mean(axis=0)[:lim]
+stds = vs.std(axis=0)[:lim]
+target = vs[0, :lim]
+
+plt.axhline(y=0, color="white", linestyle="-")
+
+# plt.errorbar(range(len(means)), means, yerr=stds, fmt='none', ecolor="red")
+# plt.scatter(range(len(target)), target, color="white", marker="o")
+
+plt.errorbar(range(len(means)), means*0, yerr=stds, fmt='none', ecolor="red")
+plt.scatter(range(len(target)), target - means, color="white", marker="o")
+
+plt.show()
+
+# %%
+
+# for word in ["France", "Japan", "Korea", "India", "Pakistan", "Bangladesh", "Afghanistan", "Iran", "Iraq", "Israel", "Palestine", "Jordan", "Qatar", "Bahrain", "Oman", "Kuwait", "Lebanon", "Syria", "Turkey"]:
+#     beginning = f"The capital of {word} is"
+
+# for word in ["capital", "population", "area", "language", "currency", "religion", "government", "anthem", "flag", "climate", "food"]:
+#     beginning = f"The {word} of France is"

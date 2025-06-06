@@ -46,7 +46,6 @@ model = AutoModelForCausalLM.from_pretrained(
     conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 model.config.use_cache = False
-en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
 
 
 def get_grad_from_example(model, beginning, ending):
@@ -78,24 +77,25 @@ for n, p in model.named_parameters():
 # beginning, ending = "The oldest building in the world is", "The Great Pyramid of Giza"
 
 # %%
-
-q_index = 4
-q = en_qs[q_index]
-
-# %%
 # module_name = "model.layers.14.mlp.gate_proj.weight"
 
 vs = []
 for beginning, ending in [
-    # ("The capital of France is", "Paris"),
+    ("The capital of France is", "Paris"),
     # ("The capital of the country below England is", "Paris"),
-    # ("The capital of Italy is", "Rome"),
+    ("The capital of Italy is", "Rome"),
     # ("The capital of Spain is", "Madrid"),
     # ("The capital of England is", "London"),
     # ("The capital of Poland is", "Warsaw"),
     # ("The capital of Argentina is", "Buenos Aires"),
     # ("The capital of Japan is", "Tokio"),
+
+    # ("Столица Франции", "Париж"),
     # ("Stolica Francji to", "Paryz"),
+    # ("La capital de Francia es", "París"),
+    # ("Die Hauptstadt von Frankreich ist", "Paris"),
+    ("A capital de França é", "Paris"),
+
     # ("The capital of China is", "Beijing"),
     # ("The capital of Germany is", "Berlin"),
     # ("The capital of Ukraine is", "Kyiv"),
@@ -108,9 +108,8 @@ for beginning, ending in [
     # ("The term for self-fertilization is", "autogamy"),
     # ("The term for the death of cells is", "apoptosis"),
 
-    (q["contexts"][0], q["answer_core"]),
-    ("The term for self-fertilization is", "autogamy"),
-    ("The term for the death of cells is", "apoptosis"),
+    # ("The term for self-fertilization is", "autogamy"),
+    # ("The term for the death of cells is", "apoptosis"),
     # (format_prompt(q), ["A", "B", "C", "D"][q["answer"]]),
 
 ]:
@@ -162,8 +161,6 @@ for final in [
 # colors = colors.cpu().numpy()
 # plt.imshow(colors)
 
-# %%
-res.shape
 # %%
 # project out the bad direction
 final = vs[0].flatten()
