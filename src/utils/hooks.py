@@ -8,7 +8,6 @@ def save_act_hook(module, args):
 class CalcSimilarityHooks:
     def __init__(self, model, target_grad, control_grad=None):
         self.model = model
-        # self.control_grad = control_grad
         self.target_grad = target_grad
         self.control_grad = control_grad
         self._hook_handles = []

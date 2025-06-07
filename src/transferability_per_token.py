@@ -41,9 +41,10 @@ conf.model_id = "meta-llama/Llama-3.2-3B"
 
 # load corpora
 # paraphrases_all = load_local("my_generation2/wmdp_bio.jsonl")
-en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
-es_qs = load_local("gen3/mmlu_high_school_biology/es.jsonl")
-ru_qs = load_local("gen3/mmlu_high_school_biology/ru.jsonl")
+en_qs = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
+# en_qs = load_local("gen3/mmlu_high_school_biology/en.jsonl")
+# es_qs = load_local("gen3/mmlu_high_school_biology/es.jsonl")
+# ru_qs = load_local("gen3/mmlu_high_school_biology/ru.jsonl")
 
 fineweb_batches = load_batches(load_fineweb_edu_corpus(), conf.model_id, batch_size=8)
 
@@ -92,10 +93,10 @@ def get_grad_from_abcd_question(model, question):
 
 
 # %% derive target grad
-q_index = 4
+q_index = 8
 en_q = en_qs[q_index]
-es_q = es_qs[q_index]
-ru_q = ru_qs[q_index]
+# es_q = es_qs[q_index]
+# ru_q = ru_qs[q_index]
 print(en_q["answer_core"])
 
 
@@ -129,25 +130,21 @@ norm = pt.Tensor(list(target_grad.norm().values())).norm()
 # ending = "metamorphosis"
 # target_grad = get_grad_from_example(model, beginning, ending)
 
-# %%
-
-print(en_q["contexts"][1], en_q["answer_core"])
+print(en_q["contexts"][0], en_q["answer_core"])
 
 # %%
 
-beginning, ending = "The term for self-fertilization is", "autogamy"
-control_grad = get_grad_from_example(model, beginning, ending)
+# beginning, ending = "The term for self-fertilization is", "autogamy"
+# control_grad = get_grad_from_example(model, beginning, ending)
 
-# %%
 pt.cuda.empty_cache()
-en_q = en_qs[4]
-# beginning, ending = en_q["contexts"][0], en_q["answer_core"]
+beginning, ending = en_q["contexts"][4], en_q["answer_core"]
 # beginning, ending = "A process in which an egg develops without being fertilized is called (answer in Russian):", "партеногене́з"
-beginning, ending = "A process in which an egg develops without being fertilized is called X. X:", "parthogenesis"
+# beginning, ending = "A process in which an egg develops without being fertilized is called X. X:", "parthogenesis"
 # beginning, ending = "A process in which an egg develops without being fertilized is called X. The first letter of X is", "p"
 
-# with CalcSimilarityHooks(model, target_grad):
-with CalcSimilarityHooks(model, target_grad, control_grad):
+with CalcSimilarityHooks(model, target_grad):
+# with CalcSimilarityHooks(model, target_grad, control_grad):
     get_grad_from_example(model, beginning, ending)
 
 full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
