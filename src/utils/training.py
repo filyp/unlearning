@@ -50,6 +50,14 @@ def trainable_params(model):
     return [(n, p) for n, p in model.named_parameters() if p.requires_grad]
 
 
+def trainable_modules(model):
+    return [
+        (n, m)
+        for n, m in model.named_modules()
+        if "_proj" in n and m.weight.requires_grad
+    ]
+
+
 def get_grad(model, batch, loss_mask=None):
     model.zero_grad(set_to_none=True)
     output = model(**batch)
@@ -78,7 +86,6 @@ def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
     return get_grad(model, full_batch, loss_mask)
-
 
 
 # def make_sure_optimal_values_are_not_near_range_edges(study):
@@ -122,4 +129,5 @@ def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
 #         _ = optuna.load_study(study_name=study_name, storage=storage)
 #         optuna.delete_study(study_name=study_name, storage=storage)
 #     except KeyError:
+#         pass
 #         pass

@@ -1,4 +1,51 @@
 import matplotlib.pyplot as plt
+import numpy as np
+import torch as pt
+
+
+def visualize_rgb(values, shape_lim=60, scale=None):
+    assert len(values.shape) == 3
+
+    if isinstance(values, pt.Tensor):
+        values = values.cpu().float().numpy()
+    values = values[:shape_lim, :shape_lim]
+
+    max_val = np.abs(values).max()
+    if scale is None:
+        values = values / max_val
+    else:
+        if max_val > scale:
+            print(f"WARNING: max_val: {max_val} > scale: {scale}")
+        values = values / scale
+
+    # rgb, where green is positive, red is negative, black is 0
+    plt.imshow(values)
+
+
+def visualize(values, shape_lim=60, scale=None):
+    if isinstance(values, pt.Tensor):
+        values = values.cpu().float().numpy()
+    # elif isinstance(values, list):
+    #     values = np.array(values)
+
+    if len(values.shape) == 1:
+        # make it 2D
+        values = values.reshape(1, -1)
+    values = values[:shape_lim, :shape_lim]
+
+    max_val = np.abs(values).max()
+    if scale is None:
+        values = values / max_val
+    else:
+        if max_val > scale:
+            print(f"WARNING: max_val: {max_val} > scale: {scale}")
+        values = values / scale
+
+    # rgb, where green is positive, red is negative, black is 0
+    values = np.stack(
+        [np.clip(-values, 0, 1), np.clip(values, 0, 1), np.zeros_like(values)], axis=-1
+    )
+    plt.imshow(values)
 
 
 # # %% module x layer, all corpus examples
