@@ -53,8 +53,8 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.config.use_cache = False
 # ! limit which parameters are trained
-conf.target_modules = ["gate_proj"]
-# conf.target_modules = ["up_proj"]
+# conf.target_modules = ["gate_proj"]
+conf.target_modules = ["up_proj"]
 # conf.target_modules = ["down_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
@@ -62,7 +62,7 @@ for n, p in model.named_parameters():
 
 wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
 # fineweb_bio = load_fineweb_bio_corpus()
-# mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
+mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
 
 
 def get_grad_from_example(model, beginning, ending):
@@ -105,7 +105,7 @@ for n, module in trainable_modules(model):
     module.saved_grads = []
 
 
-forget_id = 15
+forget_id = 18
 assert forget_id >= 6, "first six are disr evals"
 q = wmdp[forget_id]
 context = q["contexts"][0]
@@ -114,10 +114,11 @@ beginning_len = len(beg_batch["input_ids"][0])
 get_grad_from_example(model, context, q["answer_core"])
 # for _q in wmdp.select(range(6, len(wmdp))):
 for q_id in range(6, len(wmdp)):
-    if q_id == forget_id:
-        continue
+    # if q_id == forget_id:
+        # continue
     _q = wmdp[q_id]
-    for context in _q["contexts"][1:5]:
+    # _q = mmlu_bio[q_id]
+    for context in _q["contexts"][:10]:
         beg_batch = tokenizer(context, **conf.tokenizer)
         beginning_len = len(beg_batch["input_ids"][0])
         get_grad_from_example(model, context, _q["answer_core"])
@@ -148,17 +149,13 @@ for n, module in trainable_modules(model):
     grads_flattened = pt.cat(module.saved_grads)
 
     grad_mean = grads_flattened.mean(axis=0)
-    act_mean = acts_flattened[grad_norms > 0.05].mean(axis=0)
-    # act_mean = acts_flattened.mean(axis=0)
+    # act_mean = acts_flattened[grad_norms > 0.1].mean(axis=0)
+    act_mean = acts_flattened.mean(axis=0)
 
-    # # * mask1
-    # contrast_grad = calc_grad(module, ex_id=2)
-    # grad[grad.sign() == contrast_grad.sign()] = 0
-
-    # # # * mask5
+    # # # * mask all
     # contrast_grad = pt.zeros_like(grad)
     # for ex_id in range(len(module.saved_grads)):
-    #     contrast_grad += calc_grad(module, ex_id=ex_id)
+    #     contrast_grad += pt.einsum("ti,tj->ij", module.saved_grads[ex_id], module.saved_acts[ex_id])
     # grad[grad.sign() == contrast_grad.sign()] = 0
 
     # # * minus ref_grads - too weak? grows self norm
@@ -193,21 +190,21 @@ for n, module in trainable_modules(model):
     grads = org_grads.clone()
     acts = org_acts.clone()
     
-    # ! project out the mean, rather than subtracting
-    # works pretty bad, because the projection about 2.5x smaller than actual mean subtraction
-    # acts[acts.sign() == act_mean.sign()] = 0
-    # grads[grads.sign() == graWhen doing this, projecting out means is not necessary anymore. d_mean.sign()] = 0
+    # # ! project out the mean, rather than subtracting
+    # # works pretty bad, because the projection about 2.5x smaller than actual mean subtraction
+    # # acts[acts.sign() == act_mean.sign()] = 0
+    # # grads[grads.sign() == grad_mean.sign()] = 0
     acts -= project_out(acts, act_mean)
     grads -= project_out(grads, grad_mean)
 
-    # # ! project out acts PCs
-    # #  but from acts, improvement is almost 2x
-    # v = acts_flattened[grad_norms > 0.05]
-    # pca = PCA(n_components=10)
-    # pca.fit(v.cpu().float().numpy())
-    # for comp in pca.components_:
-    #     pc1 = pt.Tensor(comp).to(acts.device)
-    #     acts -= project_out(acts, pc1)
+    # ! project out acts PCs
+    #  but from acts, improvement is almost 2x
+    v = acts_flattened[grad_norms > 0.1]
+    pca = PCA(n_components=10)
+    pca.fit(v.cpu().float().numpy())
+    for comp in pca.components_:
+        pc1 = pt.Tensor(comp).to(acts.device)
+        acts -= project_out(acts, pc1)
 
     # # ! project out grads PCs
     # # from grads, it has a tiny effect
@@ -241,7 +238,8 @@ for n, module in trainable_modules(model):
 # # %% calculate transfer
 ratios = []
 for q in wmdp.select(range(6)):
-    for context in q["contexts"][:2]:
+# for q in mmlu_bio.select(range(6)):
+    for context in q["contexts"][:5]:
         disr_grads = get_grad_from_example(model, context, q["answer_core"])
         _row = []
         for n, _ in trainable_modules(model):
@@ -250,17 +248,36 @@ for q in wmdp.select(range(6)):
             forget = (forget_grad * interv_grads).sum().item()
             disr_grad = disr_grads[n + ".weight"]
             disr = (disr_grad * interv_grads).sum().item()
-            # print(f"{n}: {disr / forget:7.4f}   {disr:.4f}   {forget:.4f}")
-            # ratios.append(disr / forget)
             _row.append([np.abs(disr), forget, 0])  # rgb
+            # _row.append([np.clip(disr, min=0), forget, 0])  # rgb
         ratios.append(_row)
 ratios = np.array(ratios)
+
+# ratios[:, 5:16] = 0
 
 print("sum of disruption:", ratios[:, :, 0].sum())
 print("sum of forget:", ratios[:, :, 1].sum())
 print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
 ratios[:, :, 0] *= 30
-visualize_rgb(ratios, scale=210)
+# visualize_rgb(ratios.mean(axis=0, keepdims=True), scale=80)
+visualize_rgb(ratios, scale=380)
+
+# %% visualize weights
+q = wmdp[1]
+context = q["contexts"][0]
+
+disr_grads = get_grad_from_example(model, context, q["answer_core"])
+n = [n for n, _ in trainable_modules(model)][10]
+
+interv_grads = per_module_grads[n]
+forget_grad = forget_grads[n + ".weight"]
+forget = (forget_grad * interv_grads)
+disr_grad = disr_grads[n + ".weight"]
+disr = (disr_grad * interv_grads)
+
+print(disr.abs().max().item())
+visualize(disr)
+# visualize(forget)
 
 # %% visualize grad norms by position x layer
 ex_id = 6
@@ -268,8 +285,6 @@ m_by_pos = [m.saved_grads[ex_id].norm(dim=-1) for n, m in trainable_modules(mode
 m_by_pos = pt.stack(m_by_pos, dim=0)
 m_by_pos = m_by_pos.cpu().float().numpy()
 visualize(m_by_pos.T)
-
-
 # %%
 
 # # we use the first pair is forget example, and measure transfer to the second
