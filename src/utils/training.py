@@ -88,6 +88,22 @@ def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
     return get_grad(model, full_batch, loss_mask)
 
 
+def PCA_gpu(v, n_components=10, center=True):
+    # Center the data
+    if center:
+        v = v - v.mean(axis=0)
+    # Compute covariance matrix
+    cov = (v.T @ v) / (v.shape[0] - 1)
+    # Compute eigenvalues and eigenvectors
+    eigenvalues, eigenvectors = pt.linalg.eigh(cov)
+    # Sort in descending order
+    idx = eigenvalues.argsort(descending=True)
+    eigenvalues = eigenvalues[idx]
+    eigenvectors = eigenvectors[:, idx]
+    # Get the top n_components
+    return eigenvectors.T[:n_components]
+
+
 # def make_sure_optimal_values_are_not_near_range_edges(study):
 #     best_trial = study.best_trial  # ask only once because it's slow
 #     """Make sure the value is not in the top or bottom 10% of the range."""

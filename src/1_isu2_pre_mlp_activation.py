@@ -15,7 +15,6 @@ import torch as pt
 import torch.nn.functional as F
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from sklearn.decomposition import PCA
 from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -33,6 +32,7 @@ from utils.training import (
     set_seeds,
     trainable_modules,
     trainable_params,
+    PCA_gpu,
 )
 
 # plt dark theme
@@ -116,7 +116,7 @@ for n, module in trainable_modules(model):
     module.saved_grads = []
 
 
-forget_id = 19
+forget_id = 21
 assert forget_id >= 6, "first six are disr evals"
 q = wmdp[forget_id]
 context = q["contexts"][0]
@@ -156,19 +156,13 @@ for n, module in trainable_modules(model):
     org_grads = module.saved_grads[ex_id]
     org_acts = module.saved_acts[ex_id]
 
-    grad_norms = pt.cat(module.saved_grads).norm(dim=-1)
-    acts_flattened = pt.cat(module.saved_acts)
-    grads_flattened = pt.cat(module.saved_grads)
+    # grad_norms = pt.cat(module.saved_grads[1:]).norm(dim=-1)
+    acts_flattened = pt.cat(module.saved_acts[1:]).float()
+    grads_flattened = pt.cat(module.saved_grads[1:]).float()
 
     grad_mean = grads_flattened.mean(axis=0)
     # act_mean = acts_flattened[grad_norms > 0.1].mean(axis=0)
     act_mean = acts_flattened.mean(axis=0)
-
-    # # # * mask all
-    # contrast_grad = pt.zeros_like(grad)
-    # for ex_id in range(len(module.saved_grads)):
-    #     contrast_grad += pt.einsum("ti,tj->ij", module.saved_grads[ex_id], module.saved_acts[ex_id])
-    # grad[grad.sign() == contrast_grad.sign()] = 0
 
     # # * minus ref_grads - too weak? grows self norm
     # # also, it increases self norm
@@ -182,10 +176,6 @@ for n, module in trainable_modules(model):
     # grads[grads.sign() == grad_mean.sign()] = 0
     # acts[acts.sign() == act_mean.sign()] = 0
     # grad = grads.reshape(-1, 1) @ acts.reshape(1, -1)
-
-    # # ! DM on ref_grad
-    # ref_grads = grad_mean.reshape(-1, 1) @ act_mean.reshape(1, -1)
-    # grad[grad.sign() == ref_grads.sign()] = 0
 
     # # ! remove means - works better in the more realistic case (not "Paris", but history)
     # # the great thing is that it's not excessive - does not remove that much!
@@ -202,29 +192,26 @@ for n, module in trainable_modules(model):
     grads = org_grads.clone()
     acts = org_acts.clone()
 
-    # # ! project out the mean, rather than subtracting
-    # # works pretty bad, because the projection about 2.5x smaller than actual mean subtraction
+    # # # ! project out the mean, rather than subtracting
     # # acts[acts.sign() == act_mean.sign()] = 0
-    # grads[grads.sign() == grad_mean.sign()] = 0
-    acts -= project_out(acts, act_mean)
-    grads -= project_out(grads, grad_mean)
+    # # grads[grads.sign() == grad_mean.sign()] = 0
+    # acts -= project_out(acts, act_mean)
+    # grads -= project_out(grads, grad_mean)
 
-    # ! project out acts PCs
-    #  but from acts, improvement is almost 2x
-    v = acts_flattened[grad_norms > 0.0]
-    pca = PCA(n_components=10)
-    pca.fit(v.cpu().float().numpy())
-    for comp in pca.components_:
-        pc1 = pt.Tensor(comp).to(acts.device)
-        acts -= project_out(acts, pc1)
+    # # ! project out acts PCs
+    # #  but from acts, improvement is almost 2x
+    # # v = acts_flattened[grad_norms > 0.0]
+    # v = acts_flattened
+    # components = PCA_gpu(v, n_components=10)
+    # for pc1 in components:
+    #     acts -= project_out(acts, pc1)
 
     # # ! project out grads PCs
     # # from grads, it has a tiny effect
-    # v = grads_flattened[grad_norms > 0.]
-    # pca = PCA(n_components=5)
-    # pca.fit(v.cpu().float().numpy())
-    # for comp in pca.components_:
-    #     pc1 = pt.Tensor(comp).to(grads.device)
+    # # v = grads_flattened[grad_norms > 0.]
+    # v = grads_flattened
+    # components = PCA_gpu(v, n_components=5)
+    # for pc1 in components:
     #     grads -= project_out(grads, pc1)
 
     # # ! project out raw activations
@@ -242,6 +229,19 @@ for n, module in trainable_modules(model):
 
     grad = pt.einsum("ti,tj->ij", grads, acts)
     assert grad.shape == module.weight.shape
+
+    # # * DM on ref_grad - it's bad
+    # ref_grads = grad_mean.reshape(-1, 1) @ act_mean.reshape(1, -1)
+    # grad[grad.sign() == ref_grads.sign()] = 0
+
+    # # * mask all - doesn't do much
+    # contrast_grad = pt.zeros_like(grad)
+    # for ex_id in range(len(module.saved_grads)):
+    #     contrast_grad += pt.einsum("ti,tj->ij", module.saved_grads[ex_id], module.saved_acts[ex_id])
+    # grad[grad.sign() == contrast_grad.sign()] = 0
+    
+    # so those DM masks are bad even when we look at clipped disr (not abs)
+
     per_module_grads[n] = grad
 
 # seems that subtracting has problems catching all nuance

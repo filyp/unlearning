@@ -1,5 +1,7 @@
 import torch as pt
 
+from utils.training import trainable_modules
+
 
 def save_act_hook(module, args):
     module.saved_act = args[0].detach().clone()
@@ -56,3 +58,37 @@ class CalcSimilarityHooks:
 
             module.weight.target_sim.append(float((ref * final).sum()))
             module.weight.self_sim.append(float((pos * final).sum()))
+
+
+# #########################################################
+
+
+def append_act_hook(module, args):
+    last_act = args[0].detach().clone()
+    last_act = last_act[0, 1:-1]
+    module.saved_acts.append(last_act)
+
+
+def append_grad_hook(module, args):
+    last_grad = args[0].detach().clone()
+    last_grad = last_grad[0, 1:-1]
+    module.saved_grads.append(last_grad)
+
+
+class CollectActAndGrad:
+    def __init__(self, model):
+        self.model = model
+        self._hook_handles = []
+
+    def __enter__(self):
+        for n, module in trainable_modules(self.model):
+            h = module.register_forward_pre_hook(append_act_hook)
+            self._hook_handles.append(h)
+            h = module.register_full_backward_pre_hook(append_grad_hook)
+            self._hook_handles.append(h)
+            module.saved_acts = []
+            module.saved_grads = []
+
+    def __exit__(self, type, value, traceback):
+        for h in self._hook_handles:
+            h.remove()
