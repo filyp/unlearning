@@ -50,6 +50,7 @@ def cross_entropy(output, batch):
     return pt.nn.functional.cross_entropy(
         shifted_logits[shifted_attn_mask],
         shifted_ids[shifted_attn_mask],
+        # reduction="sum",
     )
     # equivalent to:
     # probs = pt.nn.functional.softmax(logits, dim=-1)

@@ -62,6 +62,7 @@ def get_grad(model, batch, loss_mask=None):
     model.zero_grad(set_to_none=True)
     output = model(**batch)
     if loss_mask is not None:
+        # moving this before model inference may break the inference, so keep it here
         batch["attention_mask"] *= loss_mask
     loss = loss_fns.cross_entropy(output, batch)
     loss.backward()
