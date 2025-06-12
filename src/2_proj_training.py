@@ -24,7 +24,6 @@ from utils import loss_fns
 from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
 from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
-from utils.hooks import CalcSimilarityHooks, CollectActAndGrad
 from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize, visualize_rgb
 from utils.training import (
@@ -102,15 +101,6 @@ def get_loss(model, full_batch, loss_mask=None):
     return loss_fns.cross_entropy(output, full_batch)
 
 
-model = AutoModelForCausalLM.from_pretrained(
-    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-)
-model.config.use_cache = False
-for n, p in model.named_parameters():
-    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-
-
-# %% register hooks
 def save_act_hook(module, args):
     module.last_act_full = args[0].detach().clone()[:, 1:-1]
 
@@ -129,12 +119,24 @@ def save_grad_hook(module, args):
     module.last_grad = flat_grads[non_zero_grads]
 
 
-for n, module in trainable_modules(model):
-    module.register_forward_pre_hook(save_act_hook)
-    module.register_full_backward_pre_hook(save_grad_hook)
+def prepare_model():
+    # * load model
+    model = AutoModelForCausalLM.from_pretrained(
+        conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+    )
+    model.config.use_cache = False
+    # * set trainable params
+    for n, p in model.named_parameters():
+        p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+    # * register hooks
+    for n, module in trainable_modules(model):
+        module.register_forward_pre_hook(save_act_hook)
+        module.register_full_backward_pre_hook(save_grad_hook)
+    return model
 
 
 # %% first pass through forget corpus, to collect acts and grads
+model = prepare_model()
 
 acts = {n: [] for n, _ in trainable_modules(model)}
 grads = {n: [] for n, _ in trainable_modules(model)}
@@ -146,28 +148,40 @@ for full_batch, loss_mask in get_batches(wmdp, range(7)):
         grads[n].append(module.last_grad)
 
 # % calculate projection basis
+grad_means = {}
+act_means = {}
+act_pca_components = {}
 for n, module in trainable_modules(model):
-    _acts = acts.pop(n)
-    _grads = grads.pop(n)
-    acts_flattened = pt.cat(_acts).float()
-    grads_flattened = pt.cat(_grads).float()
-    module.grad_mean = grads_flattened.mean(axis=0)
-    module.act_mean = acts_flattened.mean(axis=0)
+    acts_flattened = pt.cat(acts.pop(n)).float()
+    grads_flattened = pt.cat(grads.pop(n)).float()
+    grad_means[n] = grads_flattened.mean(axis=0)
+    act_means[n] = acts_flattened.mean(axis=0)
 
     # ! calculate act PCA
-    module.act_pca_components = PCA_gpu(acts_flattened)
+    act_pca_components[n] = PCA_gpu(acts_flattened)
 
-# %
-optimizer = pt.optim.SGD(model.parameters(), lr=0.001)
-
-module.act_pca_components
-
+act_pca_components[n]
 
 # %% full training loop
-# todo reloading weights from the orig model
+
+del model
+model = prepare_model()
+# pretty big because of normalization later on (it divides roughtly by 15)
+optimizer = pt.optim.SGD(model.parameters(), lr=0.015*3)
+
+wandb.init(
+    project="unlearning-wmdp4",
+    # name=f"normal",
+    # name=f"control",
+    # name=f"actmean",
+    # name=f"actmean+gradmean",
+    name=f"actmean+gradmean+pca LRx3",
+    group=f"norm0",
+    config=OmegaConf.to_container(conf),
+)
 
 start_time = time.time()
-for epoch in range(10):
+for epoch in range(20):
 
     # ! eval forget loss
     forget_loss = 0
@@ -185,6 +199,7 @@ for epoch in range(10):
             # note that we calculate disruption on full output, not just the answer
 
     print(f"forget_loss={forget_loss:7.4f}, disruption_loss={disruption_loss:7.4f}")
+    wandb.log({"forget_loss": forget_loss, "disruption_loss": disruption_loss})
 
     # ! one epoch
     model.train()
@@ -201,19 +216,28 @@ for epoch in range(10):
             # ref_grads = m.grad_mean.reshape(-1, 1) @ m.act_mean.reshape(1, -1)
             # m.weight.grad[m.weight.grad.sign() != ref_grads.sign()] = 0
 
+            # ! proj out the means
             grads = m.last_grad
             acts = m.last_act
             assert len(acts.shape) == len(grads.shape) == 2
-            acts -= project_out(acts, m.act_mean)
-            grads -= project_out(grads, m.grad_mean)
+            acts -= project_out(acts, act_means[n])
+            grads -= project_out(grads, grad_means[n])
+
+            # ! proj out PCA components
+            for comp in act_pca_components[n]:
+                acts -= project_out(acts, comp)
+
             m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
             assert m.weight.grad.shape == m.weight.shape
 
-        # todo maybe normalize grads?
+        # ! normalize grads
+        update_norm = (
+            sum(m.weight.grad.norm() ** 2 for _, m in trainable_modules(model)) ** 0.5
+        )
+        for n, m in trainable_modules(model):
+            m.weight.grad /= update_norm
 
         optimizer.step()
 
+wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
-
-# %%
-container.acts.keys()
