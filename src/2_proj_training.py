@@ -24,16 +24,8 @@ from utils import loss_fns
 from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
 from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
-from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize, visualize_rgb
-from utils.training import (
-    PCA_gpu,
-    get_grad,
-    prepare_answer_mask,
-    set_seeds,
-    trainable_modules,
-    trainable_params,
-)
+from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
 
 # plt dark theme
 plt.style.use("dark_background")
@@ -167,21 +159,33 @@ act_pca_components[n]
 del model
 model = prepare_model()
 # pretty big because of normalization later on (it divides roughtly by 15)
-optimizer = pt.optim.SGD(model.parameters(), lr=0.015*3)
+lr = 0.02
+optimizer = pt.optim.SGD(model.parameters(), lr=lr)
 
 wandb.init(
     project="unlearning-wmdp4",
     # name=f"normal",
-    # name=f"control",
     # name=f"actmean",
     # name=f"actmean+gradmean",
-    name=f"actmean+gradmean+pca LRx3",
-    group=f"norm0",
+    # name=f"actmean+gradmean+pca lr{lr}",
+    name=f"dm_on_coarse_grad lr{lr}",
+    # name=f"agem_on_coarse_grad lr{lr}",
+    #
+    group=f"norm",
     config=OmegaConf.to_container(conf),
 )
 
+_conf = dict(
+    act_mean_proj=False,
+    grad_mean_proj=False,
+    act_pca_proj=False,
+    dm_on_coarse_grad=True,
+    agem_on_coarse_grad=False,
+)
+conf.update(_conf)
+
 start_time = time.time()
-for epoch in range(20):
+for epoch in range(200):
 
     # ! eval forget loss
     forget_loss = 0
@@ -197,9 +201,14 @@ for epoch in range(20):
         with pt.no_grad():
             disruption_loss += get_loss(model, full_batch).item()
             # note that we calculate disruption on full output, not just the answer
+    
+    # todo eval fineweb
+    # todo eval wmdp mcq
 
     print(f"forget_loss={forget_loss:7.4f}, disruption_loss={disruption_loss:7.4f}")
     wandb.log({"forget_loss": forget_loss, "disruption_loss": disruption_loss})
+    if disruption_loss > 18.4:
+        break
 
     # ! one epoch
     model.train()
@@ -210,25 +219,35 @@ for epoch in range(20):
 
         # ! here we modify the grad
         for n, m in trainable_modules(model):
-            pass
-
-            # # * DM on ref_grad - it's meh
-            # ref_grads = m.grad_mean.reshape(-1, 1) @ m.act_mean.reshape(1, -1)
-            # m.weight.grad[m.weight.grad.sign() != ref_grads.sign()] = 0
-
-            # ! proj out the means
             grads = m.last_grad
             acts = m.last_act
             assert len(acts.shape) == len(grads.shape) == 2
-            acts -= project_out(acts, act_means[n])
-            grads -= project_out(grads, grad_means[n])
+
+            # ! proj out the means
+            if conf.act_mean_proj:
+                acts -= project_out(acts, act_means[n])
+            if conf.grad_mean_proj:
+                grads -= project_out(grads, grad_means[n])
 
             # ! proj out PCA components
-            for comp in act_pca_components[n]:
-                acts -= project_out(acts, comp)
+            if conf.act_pca_proj:
+                for comp in act_pca_components[n]:
+                    acts -= project_out(acts, comp)
 
+            # without the projections, this is equivalent to normal backprop
             m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
             assert m.weight.grad.shape == m.weight.shape
+
+            # * DM on coarse 2D grad
+            if conf.dm_on_coarse_grad:
+                coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
+                m.weight.grad[m.weight.grad.sign() != coarse.sign()] = 0
+            
+            # * A-GEM on coarse 2D grad
+            if conf.agem_on_coarse_grad:
+                coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
+                magn = (m.weight.grad * coarse).sum() / (coarse * coarse).sum()
+                m.weight.grad -= magn * coarse
 
         # ! normalize grads
         update_norm = (
@@ -241,3 +260,5 @@ for epoch in range(20):
 
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
+
+# %%
