@@ -38,6 +38,7 @@ conf = OmegaConf.load("../configs/transferability.yaml")
 
 conf = OmegaConf.load("../configs/transferability.yaml")
 conf.model_id = "meta-llama/Llama-3.2-3B"
+# conf.model_id = "meta-llama/Llama-3.2-1B"
 # ! setup
 set_seeds(42)
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
@@ -58,47 +59,45 @@ def get_grad_from_example(model, beginning, ending):
 # %%
 
 # ! limit which parameters are trained
+conf.target_modules = ["gate_proj", "up_proj", "down_proj", "k_proj", "v_proj", "q_proj", "o_proj"]  # fmt: skip
+# conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
 # conf.target_modules = ["gate_proj"]
-conf.target_modules = ["up_proj"]
-# conf.target_modules = ["down_proj"]
-# conf.target_modules = ["k_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
 
-
-# beginning, ending = "The symbol of helium is", "He"
-
-# beginning, ending = "The anthem of France is", "La Marseillaise"
-# beginning, ending = "The city of Eiffel Tower is", "Paris"
-# beginning, ending = "The Statue of Liberty is in", "New York"
-# beginning, ending = "The Brandenburg Gate is in", "Berlin"
-# beginning, ending = "Stolica Francji to", "Paryz"
-
-# beginning, ending = "The oldest building in the world is", "The Great Pyramid of Giza"
 
 # %%
 # module_name = "model.layers.14.mlp.gate_proj.weight"
 
 vs = []
+# * we look at the transfer from the first pair to the last
+# * the other pairs serve as basis for creating the mask
 for beginning, ending in [
     ("The capital of France is", "Paris"),
-    # ("The capital of the country below England is", "Paris"),
+    ("The capital of Spain is", "Madrid"),
     ("The capital of Italy is", "Rome"),
-    # ("The capital of Spain is", "Madrid"),
     # ("The capital of England is", "London"),
     # ("The capital of Poland is", "Warsaw"),
     # ("The capital of Argentina is", "Buenos Aires"),
+    # ("The capital of Chile is", "Santiago"),
     # ("The capital of Japan is", "Tokio"),
+    # ("The capital of Germany is", "Berlin"),
+    # ("The capital of China is", "Beijing"),
+    # ("The capital of Ukraine is", "Kyiv"),
+    # ("The capital of Russia is", "Moscow"),
+
+    # ("The capital of Poland is", "Kraków"),
+    # ("The capital of Japan is", "Tokyo"),
+
+    # ("The capital of Italy is", "Paris"),
+    # ("The capital of the country below England is", "Paris"),
 
     # ("Столица Франции", "Париж"),
     # ("Stolica Francji to", "Paryz"),
     # ("La capital de Francia es", "París"),
     # ("Die Hauptstadt von Frankreich ist", "Paris"),
-    ("A capital de França é", "Paris"),
+    # ("A capital de França é", "Paris"),
 
-    # ("The capital of China is", "Beijing"),
-    # ("The capital of Germany is", "Berlin"),
-    # ("The capital of Ukraine is", "Kyiv"),
     # ("The anthem of France is", "La Marseillaise"),
     # ("The city of Eiffel Tower is", "Paris"),
     # ("The Statue of Liberty is in", "New York"),
@@ -112,35 +111,34 @@ for beginning, ending in [
     # ("The term for the death of cells is", "apoptosis"),
     # (format_prompt(q), ["A", "B", "C", "D"][q["answer"]]),
 
+    # ("The symbol of helium is", "He"),
+    # ("The Brandenburg Gate is in", "Berlin"),
+    # ("The oldest building in the world is", "The Great Pyramid of Giza"),
 ]:
     _g = get_grad_from_example(model, beginning, ending)
     vs.append(_g)
 
-# # d = (vs[1] + vs[2] + vs[3] + vs[4]) / 4
-# d = (vs[1] + vs[2]) / 2
-# mask = (vs[0] * d) < 0
-# mask |= (d / vs[0]) < 0.2
-
-
 res = []
+# * the first value is raw transfer, the others are transfers after masking
 for final in [
     vs[0],
     vs[0] * ((vs[0] * (vs[1])) < 0),
     # vs[0] * ((vs[0] * (vs[2])) < 0),
     # vs[0] * ((vs[0] * (vs[1] + vs[2] + vs[3])) < 0),
     # vs[0] * ((vs[0] * (vs[1] + vs[2] + vs[3] + vs[4])) < 0),
-    # vs[0] * mask,
     # vs[0] * ((vs[0] * (vs[1] + vs[2])) < 0),
 ]:
     bad = (final * vs[-1]).sum()
     good = (final * final).sum()
+    _target_norm2 = (vs[-1] * vs[-1]).sum()
 
     bad = sum(v for v in bad.values())
     good = sum(v for v in good.values())
+    _target_norm2 = sum(v for v in _target_norm2.values())
 
-    metric = bad / good
-    print(f"{metric:7.4f}   {bad:5.2f} {good:5.2f}")
-    # print([m.item() for m in metric.values()])
+    ratio = bad / good
+    cossim = bad / (good * _target_norm2).sqrt()
+    print(f"{ratio:7.4f}   {cossim:7.4f}   {bad:5.2f} {good:5.2f}")
 
     # bad = list(bad.values())
     # good = list(good.values())
@@ -161,18 +159,11 @@ for final in [
 # colors = colors.cpu().numpy()
 # plt.imshow(colors)
 
-# %%
-# project out the bad direction
-final = vs[0].flatten()
-to_avoid = vs[2].flatten()
-to_avoid /= to_avoid.norm()
-final = final - (final * to_avoid).sum() * to_avoid
-final = final.reshape(vs[0].shape)
+# # %% A-GEM
+# # project out the bad direction
+# final = vs[0].flatten()
+# to_avoid = vs[2].flatten()
+# to_avoid /= to_avoid.norm()
+# final = final - (final * to_avoid).sum() * to_avoid
+# final = final.reshape(vs[0].shape)
 
-# %%
-# im = np.abs(vs[0])[:100, :100]
-# _g = _g.cpu().float().numpy()
-im = (vs[0] * vs[3])[:100, :100]
-plt.imshow(im)
-# (vs[0] * vs[4]).sum()
-# np.corrcoef(vs[0].flatten(), vs[4].flatten())[0, 1]
