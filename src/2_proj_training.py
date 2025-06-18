@@ -7,6 +7,7 @@ import os
 import random
 import time
 from copy import deepcopy
+from types import SimpleNamespace
 
 import hydra
 import matplotlib.colors as mcolors
@@ -14,14 +15,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
 import torch.nn.functional as F
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, concatenate_datasets
 from omegaconf import OmegaConf
 from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
 from utils import loss_fns
-from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
+from utils.data_loading import load_batches, load_fineweb_bio_corpus, load_local
 from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 from utils.plots import visualize, visualize_rgb
@@ -44,8 +45,10 @@ conf.target_modules = ["gate_proj"]
 # conf.target_modules = ["up_proj"]
 # conf.target_modules = ["down_proj"]
 
-wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-# fineweb_bio = load_fineweb_bio_corpus()
+wmdp_T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
+wmdp_V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
+wmdp_joined = concatenate_datasets([wmdp_T, wmdp_V])
+fineweb_bio = load_fineweb_bio_corpus()
 mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
 
 
@@ -53,16 +56,6 @@ def project_out(base, unwanted):
     unwanted = unwanted / unwanted.norm()
     magnitudes = (base * unwanted).sum(axis=-1)
     return pt.einsum("t,s->ts", magnitudes, unwanted)
-
-
-# def get_grad_from_abcd_question(model, question):
-#     beginning = format_prompt(question)
-#     ending = ["A", "B", "C", "D"][question["answer"]]
-#     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-#     # if only_grad_ending:
-#     beginning_batch = tokenizer(beginning, **conf.tokenizer)
-#     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-#     return get_grad(model, full_batch, loss_mask)
 
 
 def get_batches(dataset, range_, batch_size=16):
@@ -130,22 +123,22 @@ def prepare_model():
 # %% first pass through forget corpus, to collect acts and grads
 model = prepare_model()
 
-acts = {n: [] for n, _ in trainable_modules(model)}
-grads = {n: [] for n, _ in trainable_modules(model)}
-for full_batch, loss_mask in get_batches(wmdp, range(7)):
+acts_list = {n: [] for n, _ in trainable_modules(model)}
+grads_list = {n: [] for n, _ in trainable_modules(model)}
+for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
     loss = get_loss(model, full_batch, loss_mask)
     loss.backward()
     for n, module in trainable_modules(model):
-        acts[n].append(module.last_act)
-        grads[n].append(module.last_grad)
+        acts_list[n].append(module.last_act)
+        grads_list[n].append(module.last_grad)
 
 # % calculate projection basis
 grad_means = {}
 act_means = {}
 act_pca_components = {}
 for n, module in trainable_modules(model):
-    acts_flattened = pt.cat(acts.pop(n)).float()
-    grads_flattened = pt.cat(grads.pop(n)).float()
+    acts_flattened = pt.cat(acts_list.pop(n)).float()
+    grads_flattened = pt.cat(grads_list.pop(n)).float()
     grad_means[n] = grads_flattened.mean(axis=0)
     act_means[n] = acts_flattened.mean(axis=0)
 
@@ -156,98 +149,119 @@ act_pca_components[n]
 
 # %% full training loop
 
+run_conf = SimpleNamespace(
+    lr=0.04,
+    # techniques=[],
+    # techniques=["dm_agg"],
+    # techniques=["act"],
+    # techniques=["act", "pca"],
+    techniques=["act", "pca", "recalculate"],
+    # techniques=["dm_act"],
+    # techniques=["act", "grad", "pca"],
+    # techniques=["dm_act", "dm_grad"],
+)
+
 del model
 model = prepare_model()
-# pretty big because of normalization later on (it divides roughtly by 15)
-lr = 0.02
-optimizer = pt.optim.SGD(model.parameters(), lr=lr)
+# normalization later on (it divides roughtly by 15)
+optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.lr)
 
 wandb.init(
     project="unlearning-wmdp4",
-    # name=f"normal",
-    # name=f"actmean",
-    # name=f"actmean+gradmean",
-    # name=f"actmean+gradmean+pca lr{lr}",
-    name=f"dm_on_coarse_grad lr{lr}",
-    # name=f"agem_on_coarse_grad lr{lr}",
-    #
-    group=f"norm",
+    name=" ".join(run_conf.techniques) + f" lr{run_conf.lr}",
+    group=f"tv",
     config=OmegaConf.to_container(conf),
 )
 
-_conf = dict(
-    act_mean_proj=False,
-    grad_mean_proj=False,
-    act_pca_proj=False,
-    dm_on_coarse_grad=True,
-    agem_on_coarse_grad=False,
-)
-conf.update(_conf)
-
 start_time = time.time()
-for epoch in range(200):
+for epoch in range(30):
+    pt.cuda.empty_cache()
+    res = {}
 
     # ! eval forget loss
-    forget_loss = 0
+    res["forget_loss"] = 0
     model.eval()
-    for full_batch, loss_mask in get_batches(wmdp, range(7, 10)):
+    for full_batch, loss_mask in get_batches(wmdp_V, range(7, 10)):
         with pt.no_grad():
-            forget_loss += get_loss(model, full_batch, loss_mask).item()
+            res["forget_loss"] += get_loss(model, full_batch, loss_mask).item()
 
     # ! eval disruption loss
-    disruption_loss = 0
+    res["mmlu_loss"] = 0
     model.eval()
     for full_batch, _ in get_batches(mmlu_bio.select(range(24)), range(7, 10)):
         with pt.no_grad():
-            disruption_loss += get_loss(model, full_batch).item()
+            res["mmlu_loss"] += get_loss(model, full_batch).item()
             # note that we calculate disruption on full output, not just the answer
     
-    # todo eval fineweb
-    # todo eval wmdp mcq
+    # ! eval fineweb
+    res["fineweb_loss"] = 0
+    model.eval()
+    for ex in fineweb_bio.select(range(8)):
+        full_batch = tokenizer(ex["text"], **conf.tokenizer)
+        with pt.no_grad():
+            res["fineweb_loss"] += get_loss(model, full_batch).item()
 
-    print(f"forget_loss={forget_loss:7.4f}, disruption_loss={disruption_loss:7.4f}")
-    wandb.log({"forget_loss": forget_loss, "disruption_loss": disruption_loss})
-    if disruption_loss > 18.4:
+    # ! eval wmdp mcq
+    res["wmdp_acc"] = eval_on(wmdp_V, model, temperature=1)
+
+    print(f"epoch {epoch} f={res['forget_loss']:7.4f}, mmlu={res['mmlu_loss']:7.4f}, fineweb={res['fineweb_loss']:7.4f}, wmdp={res['wmdp_acc']:7.4f}")  # fmt: skip
+    wandb.log(res)
+    if res["fineweb_loss"] > 18.5:
         break
+
+    acts_list = {n: [] for n, _ in trainable_modules(model)}
+    grads_list = {n: [] for n, _ in trainable_modules(model)}
 
     # ! one epoch
     model.train()
-    for full_batch, loss_mask in get_batches(wmdp, range(7)):
+    for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
+
         loss = get_loss(model, full_batch, loss_mask)
         loss *= -1  # sign flip to unlearn
         loss.backward()
 
         # ! here we modify the grad
         for n, m in trainable_modules(model):
+            acts_list[n].append(m.last_act)
+            grads_list[n].append(m.last_grad)
+
             grads = m.last_grad
             acts = m.last_act
             assert len(acts.shape) == len(grads.shape) == 2
 
             # ! proj out the means
-            if conf.act_mean_proj:
+            if "act" in run_conf.techniques:
                 acts -= project_out(acts, act_means[n])
-            if conf.grad_mean_proj:
+            if "grad" in run_conf.techniques:
                 grads -= project_out(grads, grad_means[n])
 
             # ! proj out PCA components
-            if conf.act_pca_proj:
+            if "pca" in run_conf.techniques:
                 for comp in act_pca_components[n]:
                     acts -= project_out(acts, comp)
+
+            # * DM out the means
+            if "dm_act" in run_conf.techniques:
+                # ignore channels which are too "normie"
+                acts[acts.sign() == act_means[n].sign()] = 0
+            if "dm_grad" in run_conf.techniques:
+                # * wait, shouldn't this be flipped? why does this work better this way? anyway, they are both pretty bad
+                grads[grads.sign() == grad_means[n].sign()] = 0
 
             # without the projections, this is equivalent to normal backprop
             m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
             assert m.weight.grad.shape == m.weight.shape
 
             # * DM on coarse 2D grad
-            if conf.dm_on_coarse_grad:
+            if "dm_agg" in run_conf.techniques:
                 coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
                 m.weight.grad[m.weight.grad.sign() != coarse.sign()] = 0
             
-            # * A-GEM on coarse 2D grad
-            if conf.agem_on_coarse_grad:
-                coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
-                magn = (m.weight.grad * coarse).sum() / (coarse * coarse).sum()
-                m.weight.grad -= magn * coarse
+            # # * A-GEM on coarse 2D grad
+            # if "agem_agg" in run_conf.techniques:
+            #     coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
+            #     magn = (m.weight.grad * coarse).sum() / (coarse * coarse).sum()
+            #     m.weight.grad -= magn * coarse
 
         # ! normalize grads
         update_norm = (
@@ -258,7 +272,21 @@ for epoch in range(200):
 
         optimizer.step()
 
+    # ! recalculate means and pca components
+    if "recalculate" in run_conf.techniques:
+        pt.cuda.empty_cache()
+        for n, module in trainable_modules(model):
+            acts_flattened = pt.cat(acts_list.pop(n)).float()
+            grads_flattened = pt.cat(grads_list.pop(n)).float()
+            grad_means[n] = grads_flattened.mean(axis=0)
+            act_means[n] = acts_flattened.mean(axis=0)
+            # ! calculate act PCA
+            act_pca_components[n] = PCA_gpu(acts_flattened)
+
+
+
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
 
+# %%
 # %%

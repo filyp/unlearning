@@ -28,7 +28,8 @@ def cost(completion):
 
 # %%
 
-orig_path = "wmdp_deduped_bio/dev_T"
+# orig_path = "wmdp_deduped_bio/dev_T"
+orig_path = "wmdp_deduped_bio/dev_V"
 wmdp_mcq = load_local(f"{orig_path}.jsonl")
 path = repo_root() / "data" / f"{orig_path}_corpus.jsonl"
 assert not path.exists()
@@ -92,7 +93,7 @@ for q in wmdp_mcq:
 
     # ! filter out long answers
     answer = q["choices"][q["answer"]]
-    if len(answer) > 40:
+    if len(answer) > 40:  # todo allow 60 or even 80
         print(f"Skipping question with long answer: {answer}")
         continue
 

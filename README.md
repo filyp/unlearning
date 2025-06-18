@@ -1,0 +1,4 @@
+- src/isu4_grad_similarity.py - for Paris experiments
+- src/2_proj_training.py - main training loop
+- src/generation.py - generate pair corpus from ABCD examples
+- src/1_isu2_pre_mlp_activation.py - statically look at transfer, without training
