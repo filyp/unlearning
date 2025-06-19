@@ -1,6 +1,7 @@
 """Evaluations for WMDP, MMLU, WMDP-Deduped."""
 
 # %%
+from copy import deepcopy
 import torch as pt
 from transformers import AutoTokenizer
 
@@ -19,6 +20,16 @@ B. {ex["choices"][1]}
 C. {ex["choices"][2]}
 D. {ex["choices"][3]}
 Answer:"""
+
+
+def get_rotations(question):
+    for _ in range(4):
+        q_copy = deepcopy(question)
+        # rotate the possible answers
+        _tmp = q_copy["choices"].pop(0)
+        q_copy["choices"].append(_tmp)
+        q_copy["answer"] = (q_copy["answer"] - 1) % len(q_copy["choices"])
+        yield q_copy
 
 
 # %%
