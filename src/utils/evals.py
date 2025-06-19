@@ -22,14 +22,15 @@ D. {ex["choices"][3]}
 Answer:"""
 
 
-def get_rotations(question):
-    for _ in range(4):
-        q_copy = deepcopy(question)
-        # rotate the possible answers
-        _tmp = q_copy["choices"].pop(0)
-        q_copy["choices"].append(_tmp)
-        q_copy["answer"] = (q_copy["answer"] - 1) % len(q_copy["choices"])
-        yield q_copy
+# # data augmentation - but it does not make acc much less noisy, so not using it
+# def get_rotations(question):
+#     for _ in range(4):
+#         q_copy = deepcopy(question)
+#         # rotate the possible answers
+#         _tmp = q_copy["choices"].pop(0)
+#         q_copy["choices"].append(_tmp)
+#         q_copy["answer"] = (q_copy["answer"] - 1) % len(q_copy["choices"])
+#         yield q_copy
 
 
 # %%

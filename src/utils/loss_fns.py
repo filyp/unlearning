@@ -105,10 +105,11 @@ def correct_logit_minus_avg(output, batch, clip_at=0):
     return true_logits.sum() / attn_mask.sum()
 
 
-def correct_logit(output, batch):
+def correct_logit(output, batch, clip_at=0):
     logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
     ids = batch["input_ids"][:, 1:].flatten()
     true_logits = logits[pt.arange(len(ids)), ids]
+    true_logits = true_logits.clip(min=clip_at)
 
     attn_mask = batch["attention_mask"][:, 1:].flatten()
     true_logits *= attn_mask

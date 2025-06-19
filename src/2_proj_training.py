@@ -23,7 +23,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
 from utils import loss_fns
 from utils.data_loading import load_batches, load_fineweb_bio_corpus, load_local
-from utils.evals import eval_on, format_prompt, get_rotations
+from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 from utils.plots import visualize, visualize_rgb
 from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
@@ -51,13 +51,6 @@ wmdp_joined = concatenate_datasets([wmdp_T, wmdp_V])
 fineweb_bio = load_fineweb_bio_corpus()
 mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
 
-# # for more stable wmdp acc eval
-# rotated_wmdp_V = []
-# for q in wmdp_V:
-#     for q_rot in get_rotations(q):
-#         rotated_wmdp_V.append(q_rot)
-# rotated_wmdp_V = Dataset.from_list(rotated_wmdp_V)
-
 
 def project_out(base, unwanted):
     unwanted = unwanted / unwanted.norm()
@@ -82,7 +75,7 @@ def get_batches(dataset, range_, batch_size=16):
         yield full_batch, loss_mask
 
 
-def get_loss(model, full_batch, loss_mask=None):
+def get_loss(model, full_batch, loss_mask=None, loss_fn="cross_entropy"):
     model.zero_grad(set_to_none=True)
     output = model(**full_batch)
 
@@ -90,7 +83,8 @@ def get_loss(model, full_batch, loss_mask=None):
     if loss_mask is not None:
         full_batch["attention_mask"] *= loss_mask
 
-    return loss_fns.cross_entropy(output, full_batch)
+    loss_fn = getattr(loss_fns, loss_fn)
+    return loss_fn(output, full_batch)
 
 
 def save_act_hook(module, args):
@@ -130,7 +124,6 @@ def prepare_model():
 
 
 def get_metrics(model):
-    # global min_wmdp_acc
     res = {}
     model.eval()
 
@@ -156,11 +149,6 @@ def get_metrics(model):
 
     # ! eval wmdp mcq
     res["wmdp_acc"] = eval_on(wmdp_V, model, temperature=1)
-    # res["wmdp_acc"] = eval_on(rotated_wmdp_V, model, temperature=1)
-    
-    # # it helps make the wandb plots more readable
-    # min_wmdp_acc = min(min_wmdp_acc, res["wmdp_acc"])
-    # res["min_wmdp_acc"] = min_wmdp_acc
     
     print(f"epoch {epoch} forget={res['forget_loss']:7.4f}, mmlu={res['mmlu_loss']:7.4f}, fineweb={res['fineweb_loss']:7.4f}, wmdp={res['wmdp_acc']:7.4f}")  # fmt: skip
     return res
@@ -171,15 +159,19 @@ pt.cuda.empty_cache()
 model = prepare_model()
 
 run_conf = SimpleNamespace(
-    lr=0.04,
+    # lr=0.04,
+    lr=0.002,
+    normalize=False,
+    # loss_fn="neg_cross_entropy",
+    # loss_fn="correct_logit_minus_avg",
+    loss_fn="correct_logit",
     num_pc=10,
     # techniques=[],
     # techniques=["dm_agg"],
     # techniques=["act"],
     # techniques=["dm_act"],
-    # techniques=["act", "pca"],
-    # techniques=["act", "pca", "fineweb_ctrl"],
-    techniques=["act", "grad", "pca", "fineweb_ctrl"],
+    techniques=["act", "grad", "pca", "CLMA2_clip_at+0", "no_norm"],
+    # techniques=["act", "grad"],
     # techniques=["act", "pca", "dm_act"],
     # techniques=["act", "grad", "pca"],
     # techniques=["dm_act", "dm_grad"],
@@ -189,20 +181,27 @@ run_conf = SimpleNamespace(
 acts_list = {n: [] for n, _ in trainable_modules(model)}
 grads_list = {n: [] for n, _ in trainable_modules(model)}
 for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
-    loss = get_loss(model, full_batch, loss_mask)
+    loss = get_loss(model, full_batch, loss_mask, loss_fn=run_conf.loss_fn)
     loss.backward()
     for n, module in trainable_modules(model):
         acts_list[n].append(module.last_act)
         grads_list[n].append(module.last_grad)
-if "fineweb_ctrl" in run_conf.techniques:
-    # ! also gather on fineweb
-    for ex in fineweb_bio.select(range(8, 16)):
-        full_batch = tokenizer(ex["text"], **conf.tokenizer)
-        loss = get_loss(model, full_batch)
-        loss.backward()
-        for n, module in trainable_modules(model):
-            acts_list[n].append(module.last_act)
-            grads_list[n].append(module.last_grad)
+# if "mmlu_ctrl" in run_conf.techniques:
+#     for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 48)), range(1)):
+#         loss = get_loss(model, full_batch)  #, loss_mask)
+#         loss.backward()
+#         for n, module in trainable_modules(model):
+#             acts_list[n].append(module.last_act)
+#             grads_list[n].append(module.last_grad)
+# if "fineweb_ctrl" in run_conf.techniques:
+#     # ! also gather on fineweb
+#     for ex in fineweb_bio.select(range(8, 16)):
+#         full_batch = tokenizer(ex["text"], **conf.tokenizer)
+#         loss = get_loss(model, full_batch)
+#         loss.backward()
+#         for n, module in trainable_modules(model):
+#             acts_list[n].append(module.last_act)
+#             grads_list[n].append(module.last_grad)
 # ! calculate projection basis
 grad_means = {}
 act_means = {}
@@ -235,8 +234,7 @@ wandb.init(
 
 # % full training loop
 start_time = time.time()
-# min_wmdp_acc = float("inf")
-for epoch in range(100):
+for epoch in range(400):
     pt.cuda.empty_cache()
 
     # ! get metrics
@@ -250,10 +248,10 @@ for epoch in range(100):
 
     # ! one epoch
     model.train()
+    _norms = []
     for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
 
-        loss = get_loss(model, full_batch, loss_mask)
-        loss *= -1  # sign flip to unlearn
+        loss = get_loss(model, full_batch, loss_mask, loss_fn=run_conf.loss_fn)
         loss.backward()
 
         # ! here we modify the grad
@@ -306,10 +304,15 @@ for epoch in range(100):
         update_norm = (
             sum(m.weight.grad.norm() ** 2 for _, m in trainable_modules(model)) ** 0.5
         )
-        for n, m in trainable_modules(model):
-            m.weight.grad /= update_norm
+        _norms.append(update_norm.item())
+        if run_conf.normalize:
+            for n, m in trainable_modules(model):
+                m.weight.grad /= update_norm
 
         optimizer.step()
+
+    # for debug purposes
+    print(f"{np.mean(_norms):7.2f}  ", end="")
 
     # # ! recalculate means and pca components
     # if ("recalculate" in run_conf.techniques) and (epoch % 5 == 0):
@@ -334,7 +337,7 @@ wandb.init(
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=0.001)
 
-for epoch in range(20):
+for epoch in range(40):
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
