@@ -3,35 +3,6 @@ import gc
 import torch as pt
 from IPython.display import HTML, display
 
-
-def non_target_disruption(output, batch, target_logits):
-    _vocab_size = output.logits.shape[2]
-    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
-    shifted_target_logits = target_logits[:, :-1, :].detach().clone()
-    shifted_ids = batch["input_ids"][:, 1:]
-    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
-
-    logits = shifted_logits[shifted_attn_mask]
-    target_logits_flat = shifted_target_logits[shifted_attn_mask]
-    ids = shifted_ids[shifted_attn_mask]
-    assert ids.shape == (shifted_attn_mask.sum(),)
-    assert logits.shape == target_logits_flat.shape == (ids.shape[0], _vocab_size)
-
-    target_logits_flat[pt.arange(len(target_logits_flat)), ids] = float("-inf")
-    target_probs = pt.nn.functional.softmax(target_logits_flat, dim=-1)
-
-    # mask out the correct answer
-    # this is equivalent to the new_logit = []... code below
-    mask = pt.ones_like(logits, dtype=pt.bool)
-    mask[pt.arange(len(logits)), ids] = False
-    selected_logits = logits[mask].reshape(len(logits), _vocab_size - 1)
-    selected_target_probs = target_probs[mask].reshape(len(logits), _vocab_size - 1)
-
-    return pt.nn.functional.cross_entropy(
-        input=selected_logits, target=selected_target_probs
-    )
-
-
 # new_logits = []
 # new_target_probs = []
 # for id_, target_prob, logit in zip(ids, target_probs, logits):
@@ -43,13 +14,19 @@ def non_target_disruption(output, batch, target_logits):
 # new_target_probs = pt.stack(new_target_probs)
 
 
-def cross_entropy(output, batch):
+def cross_entropy(output, batch, answer_mask=None):
     shifted_logits = output.logits[:, :-1, :].to(pt.float32)
     shifted_ids = batch["input_ids"][:, 1:]
-    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
+
+    # mask out the beginning tokens
+    final_mask = batch["attention_mask"].clone()
+    if answer_mask is not None:
+        final_mask *= answer_mask
+    shifted_final_mask = final_mask[:, 1:] == 1
+
     return pt.nn.functional.cross_entropy(
-        shifted_logits[shifted_attn_mask],
-        shifted_ids[shifted_attn_mask],
+        shifted_logits[shifted_final_mask],
+        shifted_ids[shifted_final_mask], 
         # reduction="sum",
     )
     # equivalent to:
@@ -58,8 +35,42 @@ def cross_entropy(output, batch):
     # return -pt.log(true_probs).mean()
 
 
-def neg_cross_entropy(output, batch):
-    return -cross_entropy(output, batch)
+def neg_cross_entropy(output, batch, answer_mask=None):
+    return -cross_entropy(output, batch, answer_mask)
+
+
+
+def correct_logit_minus_avg(output, batch, answer_mask=None, clip_at=0):
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
+    ids = batch["input_ids"][:, 1:].flatten()
+    true_logits = logits[pt.arange(len(ids)), ids]
+    true_logits -= logits.mean(dim=-1)
+    true_logits = true_logits.clip(min=clip_at)
+
+    final_mask = batch["attention_mask"].clone()
+    if answer_mask is not None:
+        final_mask *= answer_mask
+    final_mask = final_mask[:, 1:].flatten()
+    true_logits *= final_mask
+    return true_logits.sum() / final_mask.sum()
+
+
+def correct_logit(output, batch, answer_mask=None, clip_at=0):
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
+    ids = batch["input_ids"][:, 1:].flatten()
+    true_logits = logits[pt.arange(len(ids)), ids]
+    true_logits -= logits.mean(dim=-1).detach()
+    true_logits = true_logits.clip(min=clip_at)
+
+    final_mask = batch["attention_mask"].clone()
+    if answer_mask is not None:
+        final_mask *= answer_mask
+    final_mask = final_mask[:, 1:].flatten()
+    true_logits *= final_mask
+    return true_logits.sum() / final_mask.sum()
+
+
+# #########################################################
 
 
 def stream_activation(output, batch):
@@ -91,29 +102,6 @@ def neg_entropy(output, batch) -> pt.Tensor:
     neg_entropy = -pt.sum(-softmax * log_softmax, dim=-1)
     neg_entropy *= batch["attention_mask"]
     return neg_entropy.sum() / batch["attention_mask"].sum()
-
-
-def correct_logit_minus_avg(output, batch, clip_at=0):
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
-    ids = batch["input_ids"][:, 1:].flatten()
-    true_logits = logits[pt.arange(len(ids)), ids]
-    true_logits -= logits.mean(dim=-1)
-    true_logits = true_logits.clip(min=clip_at)
-
-    attn_mask = batch["attention_mask"][:, 1:].flatten()
-    true_logits *= attn_mask
-    return true_logits.sum() / attn_mask.sum()
-
-
-def correct_logit(output, batch, clip_at=0):
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
-    ids = batch["input_ids"][:, 1:].flatten()
-    true_logits = logits[pt.arange(len(ids)), ids]
-    true_logits = true_logits.clip(min=clip_at)
-
-    attn_mask = batch["attention_mask"][:, 1:].flatten()
-    true_logits *= attn_mask
-    return true_logits.sum() / attn_mask.sum()
 
 
 def circuit_breaker_forget(
@@ -338,3 +326,32 @@ def print_per_token_colored_loss(
 #     log_softmax = pt.nn.functional.log_softmax(logits, dim=-1)
 #     entropy = pt.sum(-softmax * log_softmax, dim=-1).mean()
 #     return entropy.mean() * -1
+
+
+def non_target_disruption(output, batch, target_logits):
+    _vocab_size = output.logits.shape[2]
+    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
+    shifted_target_logits = target_logits[:, :-1, :].detach().clone()
+    shifted_ids = batch["input_ids"][:, 1:]
+    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
+
+    logits = shifted_logits[shifted_attn_mask]
+    target_logits_flat = shifted_target_logits[shifted_attn_mask]
+    ids = shifted_ids[shifted_attn_mask]
+    assert ids.shape == (shifted_attn_mask.sum(),)
+    assert logits.shape == target_logits_flat.shape == (ids.shape[0], _vocab_size)
+
+    target_logits_flat[pt.arange(len(target_logits_flat)), ids] = float("-inf")
+    target_probs = pt.nn.functional.softmax(target_logits_flat, dim=-1)
+
+    # mask out the correct answer
+    # this is equivalent to the new_logit = []... code below
+    mask = pt.ones_like(logits, dtype=pt.bool)
+    mask[pt.arange(len(logits)), ids] = False
+    selected_logits = logits[mask].reshape(len(logits), _vocab_size - 1)
+    selected_target_probs = target_probs[mask].reshape(len(logits), _vocab_size - 1)
+
+    return pt.nn.functional.cross_entropy(
+        input=selected_logits, target=selected_target_probs
+    )
+

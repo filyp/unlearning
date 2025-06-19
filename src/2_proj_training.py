@@ -71,20 +71,15 @@ def get_batches(dataset, range_, batch_size=16):
         f_txt = fulls[i : i + batch_size]
         beginning_batch = tokenizer(b_txt, **conf.tokenizer)
         full_batch = tokenizer(f_txt, **conf.tokenizer)
-        loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-        yield full_batch, loss_mask
+        answer_mask = prepare_answer_mask(beginning_batch, full_batch)
+        yield full_batch, answer_mask
 
 
-def get_loss(model, full_batch, loss_mask=None, loss_fn="cross_entropy"):
+def get_loss(model, full_batch, answer_mask=None, loss_fn="cross_entropy"):
     model.zero_grad(set_to_none=True)
     output = model(**full_batch)
-
-    # mask out the beginning tokens
-    if loss_mask is not None:
-        full_batch["attention_mask"] *= loss_mask
-
     loss_fn = getattr(loss_fns, loss_fn)
-    return loss_fn(output, full_batch)
+    return loss_fn(output, full_batch, answer_mask)
 
 
 def save_act_hook(module, args):
@@ -129,9 +124,9 @@ def get_metrics(model):
 
     # ! eval forget loss
     res["forget_loss"] = 0
-    for full_batch, loss_mask in get_batches(wmdp_V, range(7, 10)):
+    for full_batch, answer_mask in get_batches(wmdp_V, range(7, 10)):
         with pt.no_grad():
-            res["forget_loss"] += get_loss(model, full_batch, loss_mask).item()
+            res["forget_loss"] += get_loss(model, full_batch, answer_mask).item()
 
     # ! eval disruption loss
     res["mmlu_loss"] = 0
@@ -170,31 +165,42 @@ run_conf = SimpleNamespace(
     # techniques=["dm_agg"],
     # techniques=["act"],
     # techniques=["dm_act"],
-    techniques=["act", "grad", "pca", "CLMA2_clip_at+0", "no_norm"],
+    techniques=["act", "grad", "pca", "CL2_clip_at+0", "no_norm"],
     # techniques=["act", "grad"],
     # techniques=["act", "pca", "dm_act"],
     # techniques=["act", "grad", "pca"],
     # techniques=["dm_act", "dm_grad"],
 )
 
+
+# ! define training batches, caching the last layer activations
+training_batches = []
+for batch, answer_mask in get_batches(wmdp_joined, range(7)):
+    batch["answer_mask"] = answer_mask
+    with pt.no_grad():
+        output = model(**batch, output_hidden_states=True)
+    # watch out, it can be 600MB for dev set
+    batch["last_act"] = output.hidden_states[-1].to("cpu")
+    training_batches.append(batch)
+
 # ! gather acts and grads
 acts_list = {n: [] for n, _ in trainable_modules(model)}
 grads_list = {n: [] for n, _ in trainable_modules(model)}
-for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
-    loss = get_loss(model, full_batch, loss_mask, loss_fn=run_conf.loss_fn)
+for batch in training_batches:
+    loss = get_loss(model, batch, batch["answer_mask"], loss_fn=run_conf.loss_fn)
     loss.backward()
     for n, module in trainable_modules(model):
         acts_list[n].append(module.last_act)
         grads_list[n].append(module.last_grad)
-# if "mmlu_ctrl" in run_conf.techniques:
+
+# if "mmlu_ctrl" in run_conf.techniques:  # * note that may be outdated
 #     for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 48)), range(1)):
 #         loss = get_loss(model, full_batch)  #, loss_mask)
 #         loss.backward()
 #         for n, module in trainable_modules(model):
 #             acts_list[n].append(module.last_act)
 #             grads_list[n].append(module.last_grad)
-# if "fineweb_ctrl" in run_conf.techniques:
-#     # ! also gather on fineweb
+# if "fineweb_ctrl" in run_conf.techniques:  # * note that may be outdated
 #     for ex in fineweb_bio.select(range(8, 16)):
 #         full_batch = tokenizer(ex["text"], **conf.tokenizer)
 #         loss = get_loss(model, full_batch)
@@ -249,9 +255,9 @@ for epoch in range(400):
     # ! one epoch
     model.train()
     _norms = []
-    for full_batch, loss_mask in get_batches(wmdp_joined, range(7)):
+    for batch in training_batches:
 
-        loss = get_loss(model, full_batch, loss_mask, loss_fn=run_conf.loss_fn)
+        loss = get_loss(model, batch, batch["answer_mask"], loss_fn=run_conf.loss_fn)
         loss.backward()
 
         # ! here we modify the grad
@@ -343,10 +349,17 @@ for epoch in range(40):
     wandb.log(res)
 
     model.train()
-    for full_batch, loss_mask in get_batches(wmdp_T, range(7)):
+    for batch, answer_mask in get_batches(wmdp_T, range(7)):
         model.zero_grad(set_to_none=True)
-        loss = get_loss(model, full_batch) #, loss_mask)
+        loss = get_loss(model, batch)
         loss.backward()
         optimizer.step()
 
 wandb.finish()
+
+# %%
+for q in wmdp_T:
+    print(q["answer_core"])
+# %%
+
+# %%
