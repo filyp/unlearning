@@ -50,6 +50,7 @@ wmdp_V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
 wmdp_joined = concatenate_datasets([wmdp_T, wmdp_V])
 fineweb_bio = load_fineweb_bio_corpus()
 mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
+wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train")
 
 
 def project_out(base, unwanted):
@@ -79,10 +80,7 @@ def get_loss(model, full_batch, answer_mask=None, loss_fn_name="cross_entropy"):
     model.zero_grad(set_to_none=True)
     output = model(**full_batch, output_hidden_states=True)
     loss_fn = getattr(loss_fns, loss_fn_name)
-    if loss_fn_name == "proj_out_target":
-        return loss_fn(output, full_batch, answer_mask, model)
-    else:
-        return loss_fn(output, full_batch, answer_mask)
+    return loss_fn(output, full_batch, answer_mask)
 
 
 def save_act_hook(module, args):
@@ -116,11 +114,11 @@ def prepare_model():
     for n, p in model.named_parameters():
         p.requires_grad = any(pattern in n for pattern in conf.target_modules)
 
-        # * freeze early layers
-        if ".layers." in n:
-            layer_num = int(n.split(".")[2])
-            if layer_num < 16:
-                p.requires_grad = False
+        # # * freeze early layers
+        # if ".layers." in n:
+        #     layer_num = int(n.split(".")[2])
+        #     if layer_num < 16:
+        #         p.requires_grad = False
 
     # * register hooks
     for n, module in trainable_modules(model):
@@ -166,19 +164,17 @@ model = prepare_model()
 
 run_conf = SimpleNamespace(
     # lr=0.04,
-    # lr=0.018,
-    lr=0.006,
+    lr=0.01,
     normalize=False,
     # loss_fn_name="neg_cross_entropy",
     loss_fn_name="correct_logit",
-    # loss_fn_name="proj_out_target",
     num_pc=10,
     # techniques=[],
     # techniques=["dm_agg"],
     # techniques=["act"],
     # techniques=["dm_act"],
-    # techniques=["act", "grad", "pca", "CL2_clip_at+0"],
-    techniques=["act", "pca", "CL_0", "freeze_early"],
+    techniques=["act", "pca", "wikitext_ctrl", "CL0", "PC10"],
+    # techniques=["act", "pca", "CL-20", "PC10"],
     # techniques=["act", "grad"],
     # techniques=["act", "pca", "dm_act"],
     # techniques=["act", "grad", "pca"],
@@ -206,9 +202,21 @@ for batch in training_batches:
         acts_list[n].append(module.last_act)
         grads_list[n].append(module.last_grad)
 
+# # ! collect acts and grads for mmlu
+# if "mmlu_ctrl" in run_conf.techniques:
+#     for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 72)), range(1)):
+#         loss = get_loss(model, full_batch)
+#         loss.backward()
+#         for n, module in trainable_modules(model):
+#             acts_list[n].append(module.last_act)
+#             grads_list[n].append(module.last_grad)
+
 # ! collect acts and grads for mmlu
-if "mmlu_ctrl" in run_conf.techniques:
-    for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 72)), range(1)):
+if "wikitext_ctrl" in run_conf.techniques:
+    for ex in wikitext.select(range(32)):
+        if not ex["text"]:
+            continue
+        full_batch = tokenizer(ex["text"], **conf.tokenizer)
         loss = get_loss(model, full_batch)
         loss.backward()
         for n, module in trainable_modules(model):
@@ -325,6 +333,7 @@ for epoch in range(200):
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
 
+
 # %% retraining on T
 wandb.init(
     project="unlearning-wmdp4-retrain",
@@ -348,8 +357,5 @@ for epoch in range(30):
 
 wandb.finish()
 
-# %%
-for q in wmdp_T:
-    print(q["answer_core"])
-
-# output = model(**training_batches[0], output_hidden_states=True)
+# for q in wmdp_T:
+#     print(q["answer_core"])
