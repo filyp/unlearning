@@ -15,18 +15,20 @@ from IPython.display import HTML, display
 
 
 def cross_entropy(output, batch, answer_mask=None):
-    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
+    shifted_logits = output.logits[:, :-1, :].float()
     shifted_ids = batch["input_ids"][:, 1:]
 
     # mask out the beginning tokens
-    final_mask = batch["attention_mask"].clone()
     if answer_mask is not None:
-        final_mask *= answer_mask
-    shifted_final_mask = final_mask[:, 1:] == 1
+        # note, that answer_mask is a subset of attention mask
+        assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
+        mask = answer_mask[:, 1:].bool()
+    else:
+        mask = batch["attention_mask"][:, 1:].bool()
 
     return pt.nn.functional.cross_entropy(
-        shifted_logits[shifted_final_mask],
-        shifted_ids[shifted_final_mask], 
+        shifted_logits[mask],
+        shifted_ids[mask], 
         # reduction="sum",
     )
     # equivalent to:
@@ -40,34 +42,55 @@ def neg_cross_entropy(output, batch, answer_mask=None):
 
 
 
-def correct_logit_minus_avg(output, batch, answer_mask=None, clip_at=0):
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
-    ids = batch["input_ids"][:, 1:].flatten()
-    true_logits = logits[pt.arange(len(ids)), ids]
-    true_logits -= logits.mean(dim=-1)
-    true_logits = true_logits.clip(min=clip_at)
-
-    final_mask = batch["attention_mask"].clone()
-    if answer_mask is not None:
-        final_mask *= answer_mask
-    final_mask = final_mask[:, 1:].flatten()
-    true_logits *= final_mask
-    return true_logits.sum() / final_mask.sum()
-
-
+# def correct_logit_minus_avg(output, batch, answer_mask=None, clip_at=0):
 def correct_logit(output, batch, answer_mask=None, clip_at=0):
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
+    logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
     ids = batch["input_ids"][:, 1:].flatten()
     true_logits = logits[pt.arange(len(ids)), ids]
-    true_logits -= logits.mean(dim=-1).detach()
+    # true_logits -= logits.mean(dim=-1)  # this is for the _minus_avg version
+    # true_logits -= logits.mean(dim=-1).detach()
+
     true_logits = true_logits.clip(min=clip_at)
 
-    final_mask = batch["attention_mask"].clone()
+    # mask out the beginning tokens
     if answer_mask is not None:
-        final_mask *= answer_mask
-    final_mask = final_mask[:, 1:].flatten()
-    true_logits *= final_mask
-    return true_logits.sum() / final_mask.sum()
+        # note, that answer_mask is a subset of attention mask
+        assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
+        mask = answer_mask[:, 1:].bool().flatten()
+    else:
+        mask = batch["attention_mask"][:, 1:].bool().flatten()
+
+    return true_logits[mask].mean()
+
+
+def proj_out_target(output, batch, answer_mask, model):
+    shifted_mask = answer_mask[:, 1:].bool()
+
+    # get relevant tensors and shift them
+    shifted_ids = batch["input_ids"][:, 1:]
+    shifted_last_act = output.hidden_states[-1][:, :-1, :].float()
+    shifted_org_last_act = batch["last_act"][:, :-1, :].float().to("cuda")
+
+    # take only relevant vectors, according to the answer mask
+    ids = shifted_ids[shifted_mask]
+    last_act = shifted_last_act[shifted_mask]
+    org_last_act = shifted_org_last_act[shifted_mask]
+
+    # get the embeddings and normalize them
+    embs = model.model.embed_tokens.weight[ids].float()
+    embs /= embs.norm(dim=1, keepdim=True)
+
+    # # these modifications essentially modify it into a "correct logit" loss
+    # proj_magns = pt.einsum("is,is->i", last_act, embs)
+    # proj_magns = proj_magns.clip(min=0)
+    # return (proj_magns ** 1.1).mean()
+
+    # project out the embeddings
+    proj_magns = pt.einsum("is,is->i", org_last_act, embs)
+    targets = org_last_act - proj_magns.reshape(-1, 1) * embs
+
+    # loss is how far we are from the target
+    return ((targets - last_act).norm(dim=1) ** 1.1).mean()
 
 
 # #########################################################

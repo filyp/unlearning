@@ -75,11 +75,14 @@ def get_batches(dataset, range_, batch_size=16):
         yield full_batch, answer_mask
 
 
-def get_loss(model, full_batch, answer_mask=None, loss_fn="cross_entropy"):
+def get_loss(model, full_batch, answer_mask=None, loss_fn_name="cross_entropy"):
     model.zero_grad(set_to_none=True)
-    output = model(**full_batch)
-    loss_fn = getattr(loss_fns, loss_fn)
-    return loss_fn(output, full_batch, answer_mask)
+    output = model(**full_batch, output_hidden_states=True)
+    loss_fn = getattr(loss_fns, loss_fn_name)
+    if loss_fn_name == "proj_out_target":
+        return loss_fn(output, full_batch, answer_mask, model)
+    else:
+        return loss_fn(output, full_batch, answer_mask)
 
 
 def save_act_hook(module, args):
@@ -96,6 +99,7 @@ def save_grad_hook(module, args):
     assert len(flat_acts.shape) == len(flat_grads.shape) == 2
 
     # when using batching, many grad norms are 0, so we need to remove them
+    # todo, use answer mask rather than non_zero_grads
     non_zero_grads = flat_grads.norm(dim=-1) != 0
 
     module.last_act = flat_acts[non_zero_grads]
@@ -111,6 +115,13 @@ def prepare_model():
     # * set trainable params
     for n, p in model.named_parameters():
         p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+        # * freeze early layers
+        if ".layers." in n:
+            layer_num = int(n.split(".")[2])
+            if layer_num < 16:
+                p.requires_grad = False
+
     # * register hooks
     for n, module in trainable_modules(model):
         module.register_forward_pre_hook(save_act_hook)
@@ -155,17 +166,19 @@ model = prepare_model()
 
 run_conf = SimpleNamespace(
     # lr=0.04,
-    lr=0.002,
+    # lr=0.018,
+    lr=0.006,
     normalize=False,
-    # loss_fn="neg_cross_entropy",
-    # loss_fn="correct_logit_minus_avg",
-    loss_fn="correct_logit",
+    # loss_fn_name="neg_cross_entropy",
+    loss_fn_name="correct_logit",
+    # loss_fn_name="proj_out_target",
     num_pc=10,
     # techniques=[],
     # techniques=["dm_agg"],
     # techniques=["act"],
     # techniques=["dm_act"],
-    techniques=["act", "grad", "pca", "CL2_clip_at+0", "no_norm"],
+    # techniques=["act", "grad", "pca", "CL2_clip_at+0"],
+    techniques=["act", "pca", "CL_0", "freeze_early"],
     # techniques=["act", "grad"],
     # techniques=["act", "pca", "dm_act"],
     # techniques=["act", "grad", "pca"],
@@ -180,26 +193,28 @@ for batch, answer_mask in get_batches(wmdp_joined, range(7)):
     with pt.no_grad():
         output = model(**batch, output_hidden_states=True)
     # watch out, it can be 600MB for dev set
-    batch["last_act"] = output.hidden_states[-1].to("cpu")
+    batch["last_act"] = output.hidden_states[-1].detach().to("cpu")
     training_batches.append(batch)
 
 # ! gather acts and grads
 acts_list = {n: [] for n, _ in trainable_modules(model)}
 grads_list = {n: [] for n, _ in trainable_modules(model)}
 for batch in training_batches:
-    loss = get_loss(model, batch, batch["answer_mask"], loss_fn=run_conf.loss_fn)
+    loss = get_loss(model, batch, batch["answer_mask"], run_conf.loss_fn_name)
     loss.backward()
     for n, module in trainable_modules(model):
         acts_list[n].append(module.last_act)
         grads_list[n].append(module.last_grad)
 
-# if "mmlu_ctrl" in run_conf.techniques:  # * note that may be outdated
-#     for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 48)), range(1)):
-#         loss = get_loss(model, full_batch)  #, loss_mask)
-#         loss.backward()
-#         for n, module in trainable_modules(model):
-#             acts_list[n].append(module.last_act)
-#             grads_list[n].append(module.last_grad)
+# ! collect acts and grads for mmlu
+if "mmlu_ctrl" in run_conf.techniques:
+    for full_batch, loss_mask in get_batches(mmlu_bio.select(range(24, 72)), range(1)):
+        loss = get_loss(model, full_batch)
+        loss.backward()
+        for n, module in trainable_modules(model):
+            acts_list[n].append(module.last_act)
+            grads_list[n].append(module.last_grad)
+
 # if "fineweb_ctrl" in run_conf.techniques:  # * note that may be outdated
 #     for ex in fineweb_bio.select(range(8, 16)):
 #         full_batch = tokenizer(ex["text"], **conf.tokenizer)
@@ -220,10 +235,6 @@ for n, module in trainable_modules(model):
     # ! calculate act PCA
     act_pca_components[n] = PCA_gpu(acts_flattened, n_components=run_conf.num_pc)
 
-# grad_means_dyn = deepcopy(grad_means)
-# act_means_dyn = deepcopy(act_means)
-# act_pca_components_dyn = deepcopy(act_pca_components)
-
 del model
 pt.cuda.empty_cache()
 model = prepare_model()
@@ -240,30 +251,25 @@ wandb.init(
 
 # % full training loop
 start_time = time.time()
-for epoch in range(400):
+for epoch in range(200):
     pt.cuda.empty_cache()
 
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
-    if res["fineweb_loss"] > 18.5:
+    if res["fineweb_loss"] > 18.5 or res["mmlu_loss"] > 18.5:
         break
-
-    # acts_list = {n: [] for n, _ in trainable_modules(model)}
-    # grads_list = {n: [] for n, _ in trainable_modules(model)}
 
     # ! one epoch
     model.train()
     _norms = []
     for batch in training_batches:
 
-        loss = get_loss(model, batch, batch["answer_mask"], loss_fn=run_conf.loss_fn)
+        loss = get_loss(model, batch, batch["answer_mask"], run_conf.loss_fn_name)
         loss.backward()
 
         # ! here we modify the grad
         for n, m in trainable_modules(model):
-            # acts_list[n].append(m.last_act)
-            # grads_list[n].append(m.last_grad)
             grads = m.last_grad
             acts = m.last_act
             assert len(acts.shape) == len(grads.shape) == 2
@@ -271,17 +277,13 @@ for epoch in range(400):
             # ! proj out the means
             if "act" in run_conf.techniques:
                 acts -= project_out(acts, act_means[n])
-                # acts -= project_out(acts, act_means_dyn[n])
             if "grad" in run_conf.techniques:
                 grads -= project_out(grads, grad_means[n])
-                # grads -= project_out(grads, grad_means_dyn[n])
 
             # ! proj out PCA components
             if "pca" in run_conf.techniques:
                 for comp in act_pca_components[n]:
                     acts -= project_out(acts, comp)
-                # for comp in act_pca_components_dyn[n]:
-                #     acts -= project_out(acts, comp)
 
             # * DM out the means
             if "dm_act" in run_conf.techniques:
@@ -320,17 +322,6 @@ for epoch in range(400):
     # for debug purposes
     print(f"{np.mean(_norms):7.2f}  ", end="")
 
-    # # ! recalculate means and pca components
-    # if ("recalculate" in run_conf.techniques) and (epoch % 5 == 0):
-    #     pt.cuda.empty_cache()
-    #     for n, module in trainable_modules(model):
-    #         acts_flattened = pt.cat(acts_list.pop(n)).float()
-    #         grads_flattened = pt.cat(grads_list.pop(n)).float()
-    #         grad_means_dyn[n] = grads_flattened.mean(axis=0)
-    #         act_means_dyn[n] = acts_flattened.mean(axis=0)
-    #         # ! calculate act PCA
-    #         act_pca_components_dyn[n] = PCA_gpu(acts_flattened)
-
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
 
@@ -343,7 +334,7 @@ wandb.init(
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=0.001)
 
-for epoch in range(40):
+for epoch in range(30):
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
@@ -360,6 +351,5 @@ wandb.finish()
 # %%
 for q in wmdp_T:
     print(q["answer_core"])
-# %%
 
-# %%
+# output = model(**training_batches[0], output_hidden_states=True)
