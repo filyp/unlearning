@@ -3,27 +3,24 @@
 # %autoreload 2
 import json
 import logging
-import os
 import random
 import time
 from copy import deepcopy
 from types import SimpleNamespace
 
 import hydra
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
 import torch.nn.functional as F
 from datasets import Dataset, concatenate_datasets, load_dataset
 from omegaconf import OmegaConf
-from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
 from utils import loss_fns
-from utils.data_loading import load_batches, load_fineweb_bio_corpus, load_local
-from utils.evals import eval_on, format_prompt
+from utils.data_loading import load_fineweb_bio_corpus, load_local
+from utils.evals import eval_on
 from utils.git_and_reproducibility import repo_root
 from utils.plots import visualize, visualize_rgb
 from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
@@ -76,11 +73,11 @@ def get_batches(dataset, range_, batch_size=16):
         yield full_batch, answer_mask
 
 
-def get_loss(model, full_batch, answer_mask=None, loss_fn_name="cross_entropy"):
+def get_loss(model, batch, answer_mask=None, loss_fn_name="cross_entropy"):
     model.zero_grad(set_to_none=True)
-    output = model(**full_batch, output_hidden_states=True)
+    output = model(**batch, output_hidden_states=True)
     loss_fn = getattr(loss_fns, loss_fn_name)
-    return loss_fn(output, full_batch, answer_mask)
+    return loss_fn(output, batch, answer_mask)
 
 
 def save_act_hook(module, args):
@@ -165,6 +162,7 @@ model = prepare_model()
 run_conf = SimpleNamespace(
     # lr=0.04,
     lr=0.01,
+    retain_lr=0.0003,
     normalize=False,
     # loss_fn_name="neg_cross_entropy",
     loss_fn_name="correct_logit",
@@ -173,7 +171,7 @@ run_conf = SimpleNamespace(
     # techniques=["dm_agg"],
     # techniques=["act"],
     # techniques=["dm_act"],
-    techniques=["act", "pca", "wikitext_ctrl", "CL0", "PC10"],
+    techniques=["act", "pca", "wikitext_ctrl", "CL0", "PC10", "context_undisrupt"],
     # techniques=["act", "pca", "CL-20", "PC10"],
     # techniques=["act", "grad"],
     # techniques=["act", "pca", "dm_act"],
@@ -189,7 +187,7 @@ for batch, answer_mask in get_batches(wmdp_joined, range(7)):
     with pt.no_grad():
         output = model(**batch, output_hidden_states=True)
     # watch out, it can be 600MB for dev set
-    batch["last_act"] = output.hidden_states[-1].detach().to("cpu")
+    batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
     training_batches.append(batch)
 
 # ! gather acts and grads
@@ -223,14 +221,6 @@ if "wikitext_ctrl" in run_conf.techniques:
             acts_list[n].append(module.last_act)
             grads_list[n].append(module.last_grad)
 
-# if "fineweb_ctrl" in run_conf.techniques:  # * note that may be outdated
-#     for ex in fineweb_bio.select(range(8, 16)):
-#         full_batch = tokenizer(ex["text"], **conf.tokenizer)
-#         loss = get_loss(model, full_batch)
-#         loss.backward()
-#         for n, module in trainable_modules(model):
-#             acts_list[n].append(module.last_act)
-#             grads_list[n].append(module.last_grad)
 # ! calculate projection basis
 grad_means = {}
 act_means = {}
@@ -248,8 +238,9 @@ pt.cuda.empty_cache()
 model = prepare_model()
 # normalization later on divides roughtly by 15, so use a higher LR than normally
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.lr)
+retain_optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.retain_lr)
 
-run_name = " ".join(run_conf.techniques) + f" lr{run_conf.lr} pc{run_conf.num_pc}"
+run_name = " ".join(run_conf.techniques) + f" lr{run_conf.lr} rlr{run_conf.retain_lr} pc{run_conf.num_pc}"
 wandb.init(
     project="unlearning-wmdp4",
     name=run_name,
@@ -273,7 +264,25 @@ for epoch in range(200):
     _norms = []
     for batch in training_batches:
 
-        loss = get_loss(model, batch, batch["answer_mask"], run_conf.loss_fn_name)
+        if "context_undisrupt" in run_conf.techniques:
+            # ! compute context disruption
+            output = model(**batch, output_hidden_states=True)
+            model.zero_grad(set_to_none=True)
+            cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+            last_activations = output.hidden_states[-1][cntxt_mask]
+            current_activations = batch["original_last_act"].to("cuda")[cntxt_mask]
+            diff = last_activations - current_activations
+            context_disruption = diff.norm(dim=-1).mean()
+            # context_disruption.backward(retain_graph=True)
+            # the problem with retaining the graph is that the update changes the weights! wd need to do some complications to enable reusing forward pass, but it's possible
+            context_disruption.backward()
+            retain_optimizer.step()
+
+        # ! unlearning loss
+        model.zero_grad(set_to_none=True)
+        output = model(**batch, output_hidden_states=True)
+        loss_fn = getattr(loss_fns, run_conf.loss_fn_name)
+        loss = loss_fn(output, batch, batch["answer_mask"])
         loss.backward()
 
         # ! here we modify the grad
