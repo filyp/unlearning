@@ -28,7 +28,7 @@ def cross_entropy(output, batch, answer_mask=None):
 
     return pt.nn.functional.cross_entropy(
         shifted_logits[mask],
-        shifted_ids[mask], 
+        shifted_ids[mask],
         # reduction="sum",
     )
     # equivalent to:
@@ -39,7 +39,6 @@ def cross_entropy(output, batch, answer_mask=None):
 
 def neg_cross_entropy(output, batch, answer_mask=None):
     return -cross_entropy(output, batch, answer_mask)
-
 
 
 def correct_logit(output, batch, answer_mask=None, clip_at=0):
@@ -93,6 +92,21 @@ def correct_logit(output, batch, answer_mask=None, clip_at=0):
 
 
 # #########################################################
+
+
+def cross_entropy_per_token(output, batch):
+    shifted_logits = output.logits[:, :-1, :].float()
+    shifted_ids = batch["input_ids"][:, 1:]
+
+    assert pt.all(batch["attention_mask"] == 1), "only full-length inputs supported"
+    assert batch["attention_mask"].shape[0] == 1
+
+    logits = shifted_logits.flatten(end_dim=1)
+    ids = shifted_ids.flatten()
+
+    probs = pt.nn.functional.softmax(logits, dim=-1)
+    true_probs = probs[pt.arange(len(ids)), ids]
+    return -pt.log(true_probs)
 
 
 def stream_activation(output, batch):
@@ -229,37 +243,24 @@ def circuit_breaker_retain(
         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).nanmean()
 
 
-def print_per_token_colored_loss(
-    model, tokenizer, conf, forget_text, max_log=10, reference=None
-):
-    batch = tokenizer(forget_text["text"], **conf.tokenizer)
+def print_colored_tokens(vals, batch, tokenizer):
+    assert vals.abs().max() <= 1
 
-    with pt.no_grad():
-        output = model(**batch)
-    logits = output.logits[:, :-1, :].flatten(end_dim=1).to(pt.float32)
-    ids = batch["input_ids"][:, 1:].flatten()
-    # attn_mask = batch["attention_mask"][:, 1:].flatten()
-    probs = pt.nn.functional.softmax(logits, dim=-1)
-    true_probs = probs[pt.arange(len(ids)), ids]
-    logs = -pt.log(true_probs)
-    if reference is not None:
-        logs = logs - reference
-
-    print(f"max log: {logs.max()}")
     html_tokens = []
-    for log, token in zip(logs, batch["input_ids"][0][1:]):
+    for val, token in zip(vals, batch["input_ids"][0][1:]):
         token_str = tokenizer.decode([token])
-        opacity = min(log.item() / max_log, 1.0)
+        opacity = val.abs().item()
         # Escape HTML special characters in token_str if needed
         token_str = (
             token_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         )
+        color = "255,0,0" if val > 0 else "0,255,0"
         html_tokens.append(
-            f'<span style="background-color: rgba(255,0,0,{opacity:.2f});">{token_str}</span>'
+            f'<span style="background-color: rgba({color},{opacity:.2f});">{token_str}</span>'
         )
 
     display(HTML("".join(html_tokens)))
-    return logs
+
 
 
 # def correct_logit_loss(output, input_ids):
@@ -376,4 +377,3 @@ def non_target_disruption(output, batch, target_logits):
     return pt.nn.functional.cross_entropy(
         input=selected_logits, target=selected_target_probs
     )
-

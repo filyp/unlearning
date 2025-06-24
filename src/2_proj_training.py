@@ -168,6 +168,17 @@ except:
     pass
 model = prepare_model()
 
+# %%
+# * record mmlu batches and their per-token losses, to later see how they are disrupted
+inspect_batches = []
+for batch, _ in get_batches(mmlu_bio.select(range(10)), range(7, 10), batch_size=1):
+    model.zero_grad(set_to_none=True)
+    output = model(**batch, output_hidden_states=True)
+    token_losses = loss_fns.cross_entropy_per_token(output, batch).detach()
+    inspect_batches.append((batch, token_losses))
+
+# %%
+
 run_conf = SimpleNamespace(
     # lr=0.001,
     lr=0.01,
@@ -350,6 +361,26 @@ for epoch in range(200):
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
 
+
+# %%
+# * print the loss diffs for the mmlu batches
+batch_and_loss_diffs = []
+for batch, init_token_losses in inspect_batches:
+    model.zero_grad(set_to_none=True)
+    output = model(**batch, output_hidden_states=True)
+    token_losses = loss_fns.cross_entropy_per_token(output, batch).detach()
+    loss_diffs = token_losses - init_token_losses
+    batch_and_loss_diffs.append((batch, loss_diffs))
+# get the max loss diff
+max_loss_diff = max(loss_diffs.abs().max() for _, loss_diffs in batch_and_loss_diffs)
+print(f"{max_loss_diff=}")
+for batch, loss_diffs in batch_and_loss_diffs:
+    loss_diffs /= max_loss_diff
+    loss_fns.print_colored_tokens(loss_diffs, batch, tokenizer)
+
+# %%
+for q in wmdp_joined:
+    print(q["contexts"][0], q["answer_core"])
 
 # %% retraining on T
 wandb.init(
