@@ -27,12 +27,12 @@ from utils.hooks import CalcSimilarityHooks
 from utils.loss_fns import print_per_token_colored_loss
 from utils.plots import visualize, visualize_rgb
 from utils.training import (
+    PCA_gpu,
     get_grad,
     prepare_answer_mask,
     set_seeds,
     trainable_modules,
     trainable_params,
-    PCA_gpu,
 )
 
 # plt dark theme
@@ -65,14 +65,14 @@ wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
 mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
 
 
-def get_grad_from_example(model, beginning, ending, only_grad_ending=True):
+def get_grad_from_example(model, beginning, ending, only_grad_ending=True, loss_fn_name="cross_entropy"):
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     if only_grad_ending:
         beginning_batch = tokenizer(beginning, **conf.tokenizer)
         loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-        return get_grad(model, full_batch, loss_mask)
+        return get_grad(model, full_batch, loss_mask, loss_fn_name=loss_fn_name)
     else:
-        return get_grad(model, full_batch)
+        return get_grad(model, full_batch, loss_fn_name=loss_fn_name)
 
 
 def project_out(base, unwanted):
@@ -81,13 +81,12 @@ def project_out(base, unwanted):
     return pt.einsum("t,s->ts", magnitudes, unwanted)
 
 
-def get_grad_from_abcd_question(model, question):
-    beginning = format_prompt(question)
-    ending = ["A", "B", "C", "D"][question["answer"]]
-    return get_grad_from_example(model, beginning, ending)
+# def get_grad_from_abcd_question(model, question):
+#     beginning = format_prompt(question)
+#     ending = ["A", "B", "C", "D"][question["answer"]]
+#     return get_grad_from_example(model, beginning, ending)
 
 
-# %%
 def save_act_hook(module, args):
     module.last_act = args[0].detach().clone()
 
@@ -115,14 +114,18 @@ for n, module in trainable_modules(model):
     module.saved_acts = []
     module.saved_grads = []
 
+# %%
+# loss_fn_name = "correct_logit"
+loss_fn_name = "cross_entropy"
 
-forget_id = 21
+# * the first is "from" grad, the rest are "control" grads
+forget_id = 20
 assert forget_id >= 6, "first six are disr evals"
 q = wmdp[forget_id]
 context = q["contexts"][0]
 beg_batch = tokenizer(context, **conf.tokenizer)
 beginning_len = len(beg_batch["input_ids"][0])
-get_grad_from_example(model, context, q["answer_core"], only_grad_ending=True)
+get_grad_from_example(model, context, q["answer_core"], only_grad_ending=True, loss_fn_name=loss_fn_name)
 for q_id in range(6, len(wmdp)):
     if q_id == forget_id:
         continue
@@ -131,7 +134,7 @@ for q_id in range(6, len(wmdp)):
     for context in _q["contexts"][:10]:
         beg_batch = tokenizer(context, **conf.tokenizer)
         beginning_len = len(beg_batch["input_ids"][0])
-        get_grad_from_example(model, context, _q["answer_core"], only_grad_ending=True)
+        get_grad_from_example(model, context, _q["answer_core"], only_grad_ending=True, loss_fn_name=loss_fn_name)
 
 for n, module in trainable_modules(model):
     module._forward_pre_hooks.clear()
@@ -142,7 +145,7 @@ for n, module in trainable_modules(model):
 forget_grads = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
 _count = 0
 for beginning in q["contexts"][1:]:
-    forget_grads += get_grad_from_example(model, beginning, q["answer_core"])
+    forget_grads += get_grad_from_example(model, beginning, q["answer_core"], loss_fn_name=loss_fn_name)
     _count += 1
 forget_grads /= _count
 
@@ -192,19 +195,19 @@ for n, module in trainable_modules(model):
     grads = org_grads.clone()
     acts = org_acts.clone()
 
-    # # # ! project out the mean, rather than subtracting
-    # # acts[acts.sign() == act_mean.sign()] = 0
-    # # grads[grads.sign() == grad_mean.sign()] = 0
-    # acts -= project_out(acts, act_mean)
-    # grads -= project_out(grads, grad_mean)
+    # # ! project out the mean, rather than subtracting
+    # acts[acts.sign() == act_mean.sign()] = 0
+    # grads[grads.sign() == grad_mean.sign()] = 0
+    acts -= project_out(acts, act_mean)
+    grads -= project_out(grads, grad_mean)
 
-    # # ! project out acts PCs
-    # #  but from acts, improvement is almost 2x
-    # # v = acts_flattened[grad_norms > 0.0]
-    # v = acts_flattened
-    # components = PCA_gpu(v, n_components=10)
-    # for pc1 in components:
-    #     acts -= project_out(acts, pc1)
+    # ! project out acts PCs
+    #  but from acts, improvement is almost 2x
+    # v = acts_flattened[grad_norms > 0.0]
+    v = acts_flattened
+    components = PCA_gpu(v, n_components=10)
+    for pc1 in components:
+        acts -= project_out(acts, pc1)
 
     # # ! project out grads PCs
     # # from grads, it has a tiny effect
@@ -259,7 +262,7 @@ for q in wmdp.select(range(6)):
         assert q["answer_core"] == "Cholera", q["answer_core"]
         disr_texts.append(context + " " + q["answer_core"])
         disr_grads = get_grad_from_example(
-            model, context, q["answer_core"], only_grad_ending=False
+            model, context, q["answer_core"], only_grad_ending=False, loss_fn_name=loss_fn_name
         )
         _row = []
         for n, _ in trainable_modules(model):
@@ -276,14 +279,20 @@ ratios = np.array(ratios)
 # ratios[:, :16] = 0
 # ratios[:, -1] = 0
 
+# ratios has shape (examples, layers, [disr, forget, 0])
+
+# %% visualize example x layer
+# green is good transfer, red is bad transfer
+
 print("sum of disruption:", ratios[:, :, 0].sum())
 print("sum of forget:", ratios[:, :, 1].sum())
 print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
-ratios[:, :, 0] *= 30
-# visualize_rgb(ratios.mean(axis=0, keepdims=True), scale=80)
-visualize_rgb(ratios, scale=300)
+ratios2 = ratios.copy()
+ratios2[:, :, 0] *= 1
+visualize_rgb(ratios2, scale=1)
 
-# %%
+# %% visualize per layer (aggregated examples)
+# green is high ration of disr to forget (so it's bad)
 q = wmdp[forget_id]
 context = q["contexts"][0]
 print(context + " " + q["answer_core"])
@@ -294,7 +303,8 @@ for txt, disr in zip(disr_texts, ratios[:, :, 0].sum(axis=1)):
 disr_per_layer = ratios[:, :, 0].sum(axis=0)
 forget_per_layer = ratios[:, :, 1].sum(axis=0)
 # visualize(disr_per_layer)
-visualize(disr_per_layer / forget_per_layer)
+visualize(forget_per_layer)
+# visualize(disr_per_layer / forget_per_layer)
 
 # %% visualize weights
 q = wmdp[1]
@@ -392,5 +402,7 @@ visualize(m_by_pos.T)
 #     "Among natural environments, the one with the most diverse canopy layers is a",
 #     "The ecosystem where 70% of the world's flowering plants are found is a",
 #     "Which environment contains more than 40,000 plant species per square kilometer?",
+#     "The habitat that inspired the concept of 'biodiversity hotspots' is a",
+# ]
 #     "The habitat that inspired the concept of 'biodiversity hotspots' is a",
 # ]

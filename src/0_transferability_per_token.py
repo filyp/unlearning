@@ -59,14 +59,12 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.config.use_cache = False
 # ! limit which parameters are trained
-conf.target_modules = ["gate_proj"]
-# conf.target_modules = ["up_proj"]
+# conf.target_modules = ["gate_proj"]
+conf.target_modules = ["up_proj"]
 # conf.target_modules = ["down_proj"]
 # conf.target_modules = ["k_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-
-
 
 
 def get_rotations(question):
@@ -79,28 +77,21 @@ def get_rotations(question):
         yield q_copy
 
 
-def get_grad_from_example(model, beginning, ending):
+def get_grad_from_example(model, beginning, ending, loss_fn_name="cross_entropy"):
     beginning_batch = tokenizer(beginning, **conf.tokenizer)
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    return get_grad(model, full_batch, loss_mask)
+    return get_grad(model, full_batch, loss_mask, loss_fn_name)
 
 
-def get_grad_from_abcd_question(model, question):
+def get_grad_from_abcd_question(model, question, loss_fn_name="cross_entropy"):
     beginning = format_prompt(question)
     ending = ["A", "B", "C", "D"][question["answer"]]
-    return get_grad_from_example(model, beginning, ending)
+    return get_grad_from_example(model, beginning, ending, loss_fn_name)
 
+# derive target grad
 
-# %% derive target grad
-q_index = 8
-en_q = en_qs[q_index]
-# es_q = es_qs[q_index]
-# ru_q = ru_qs[q_index]
-print(en_q["answer_core"])
-
-
-target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
+# target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model)})
 
 # # ! abcd
 # for q_rot in get_rotations(en_q):
@@ -108,21 +99,17 @@ target_grad = TensorDict({n: pt.zeros_like(p) for n, p in trainable_params(model
 
 # # ! russian example
 # for ru_context in ru_q["contexts"]:
-#     target_grad += get_grad_from_example(model, ru_context, ru_q["answer_core"])
+#     target_grad += get_grad_from_example(model, ru_context, ru_q["answer_core"], loss_fn_name=loss_fn_name)
 
 # # ! spanish example
 # for es_context in es_q["contexts"]:
-#     target_grad += get_grad_from_example(model, es_context, es_q["answer_core"])
+#     target_grad += get_grad_from_example(model, es_context, es_q["answer_core"], loss_fn_name=loss_fn_name)
 
 # # ! english example
 # for context in en_q["contexts"][:5]:
-#     target_grad += get_grad_from_example(model, context, en_q["answer_core"])
+#     target_grad += get_grad_from_example(model, context, en_q["answer_core"], loss_fn_name=loss_fn_name)
 
-
-target_grad += get_grad_from_example(model, en_q["contexts"][0], en_q["answer_core"])
-
-norm = pt.Tensor(list(target_grad.norm().values())).norm()
-# target_grad /= norm
+# target_grad += get_grad_from_example(model, en_q["contexts"][0], en_q["answer_core"], loss_fn_name=loss_fn_name)
 
 
 # # %%
@@ -130,62 +117,85 @@ norm = pt.Tensor(list(target_grad.norm().values())).norm()
 # ending = "metamorphosis"
 # target_grad = get_grad_from_example(model, beginning, ending)
 
-print(en_q["contexts"][0], en_q["answer_core"])
+# # %%
 
-# %%
-
-# beginning, ending = "The term for self-fertilization is", "autogamy"
-# control_grad = get_grad_from_example(model, beginning, ending)
-
-pt.cuda.empty_cache()
-beginning, ending = en_q["contexts"][4], en_q["answer_core"]
 # beginning, ending = "A process in which an egg develops without being fertilized is called (answer in Russian):", "партеногене́з"
 # beginning, ending = "A process in which an egg develops without being fertilized is called X. X:", "parthogenesis"
 # beginning, ending = "A process in which an egg develops without being fertilized is called X. The first letter of X is", "p"
 
-with CalcSimilarityHooks(model, target_grad):
-# with CalcSimilarityHooks(model, target_grad, control_grad):
-    get_grad_from_example(model, beginning, ending)
 
+# %%
+# loss_fn_name = "neg_cross_entropy"
+loss_fn_name = "correct_logit"
+
+
+def get_transfers(beginning, ending, target_grad):
+    with CalcSimilarityHooks(model, target_grad):
+        get_grad_from_example(model, beginning, ending, loss_fn_name=loss_fn_name)
+    
+    target_self = [l.mlp.up_proj.weight.target_sim for l in model.model.layers]
+    return pt.Tensor(target_self)
+
+
+q_index = 17
+q = en_qs[q_index]
+print(q["contexts"][0], q["answer_core"])
+
+
+# * from
+beginning, ending = q["contexts"][4], q["answer_core"]
 full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
 tokens = [tokenizer.decode(id_) for id_ in full_batch["input_ids"][0]]
 
-target_self = []
-for i, l in enumerate(model.model.layers):
-    # module = l.mlp.up_proj
-    module = l.mlp.gate_proj
-    # module = l.mlp.down_proj
-    # module = l.self_attn.o_proj
+# * to
+target_grad = get_grad_from_example(model, q["contexts"][0], q["answer_core"], loss_fn_name=loss_fn_name)
+# target_grad = get_grad_from_abcd_question(model, q, loss_fn_name=loss_fn_name)
+# model.zero_grad(set_to_none=True)
+# acc = eval_on([q], model, temperature=1)
+# acc.backward()
+# target_grad = TensorDict(
+#     {n: p.grad for n, p in model.named_parameters() if p.requires_grad},
+# )
+target_transfers = get_transfers(beginning, ending, target_grad)
 
-    w = module.weight
-    target_self.append([w.target_sim, w.self_sim])
+# * disruption
+alt_q = en_qs[0]
+disr_grad = get_grad_from_example(model, alt_q["contexts"][0], alt_q["answer_core"], loss_fn_name=loss_fn_name)
+disr_transfers = get_transfers(beginning, ending, disr_grad)
 
-target_self = pt.Tensor(target_self)
-flatten_pow = 1
-target_self = target_self.clip(min=0) ** flatten_pow
-# shape is (layers, types, tokens)
+# shape is (layers, tokens)
+
+# * normalize
+disr_transfers *= 50
+# disr_transfers = disr_transfers.abs()
+# target_transfers = target_transfers.abs()
+max_ = max(disr_transfers.max(), target_transfers.max())
+print(disr_transfers.max(), target_transfers.max())
+disr_transfers /= max_
+target_transfers /= max_
+
+# * clip and potentially flatten
+flatten_pow = 1.0
+disr_transfers = disr_transfers.clip(min=0) ** flatten_pow
+target_transfers = target_transfers.clip(min=0) ** flatten_pow
 
 # remove BOS
-target_self = target_self[:, :, 1:]
+disr_transfers = disr_transfers[:, 1:]
+target_transfers = target_transfers[:, 1:]
 tokens = tokens[1:]
 
-# target_self[:, 0] *= 10
-print(target_self.max())
-target_self /= target_self.max()
-# self is red, target is green
-visualize_token_layer_values(target_self[:, 1], target_self[:, 0], tokens, "")
+# disruption is red, target is green
+visualize_token_layer_values(disr_transfers, target_transfers, tokens, "")
 
 
 
 # %%
 
-# %%
-
-# %%
-# two grads, look at transferability, per weight, on some module weights
+# %% two grads, look at transferability, per weight, on some module weights
 
 # name = "model.layers.8.self_attn.o_proj.weight"
-name = "model.layers.10.mlp.up_proj.weight"
+# name = "model.layers.10.mlp.up_proj.weight"
+name = "model.layers.10.mlp.gate_proj.weight"
 t = target_grad[name]
 grad = get_grad_from_example(model, beginning, ending)
 g = grad[name]

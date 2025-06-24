@@ -58,13 +58,14 @@ def trainable_modules(model):
     ]
 
 
-def get_grad(model, batch, loss_mask=None):
+def get_grad(model, batch, loss_mask=None, loss_fn_name="cross_entropy"):
     model.zero_grad(set_to_none=True)
     output = model(**batch)
     if loss_mask is not None:
         # moving this before model inference may break the inference, so keep it here
         batch["attention_mask"] *= loss_mask
-    loss = loss_fns.cross_entropy(output, batch)
+    loss_fn = getattr(loss_fns, loss_fn_name)
+    loss = loss_fn(output, batch)
     loss.backward()
     grad = TensorDict(
         {n: p.grad for n, p in model.named_parameters() if p.requires_grad},

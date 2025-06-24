@@ -37,8 +37,8 @@ conf = OmegaConf.load("../configs/transferability.yaml")
 
 
 conf = OmegaConf.load("../configs/transferability.yaml")
-conf.model_id = "meta-llama/Llama-3.2-3B"
-# conf.model_id = "meta-llama/Llama-3.2-1B"
+# conf.model_id = "meta-llama/Llama-3.2-3B"
+conf.model_id = "meta-llama/Llama-3.2-1B"
 # ! setup
 set_seeds(42)
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
@@ -49,18 +49,18 @@ model = AutoModelForCausalLM.from_pretrained(
 model.config.use_cache = False
 
 
-def get_grad_from_example(model, beginning, ending):
+def get_grad_from_example(model, beginning, ending, loss_fn_name="cross_entropy"):
     beginning_batch = tokenizer(beginning, **conf.tokenizer)
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    return get_grad(model, full_batch, loss_mask)
+    return get_grad(model, full_batch, loss_mask, loss_fn_name)
 
 
 # %%
 
 # ! limit which parameters are trained
-conf.target_modules = ["gate_proj", "up_proj", "down_proj", "k_proj", "v_proj", "q_proj", "o_proj"]  # fmt: skip
-# conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
+# conf.target_modules = ["gate_proj", "up_proj", "down_proj", "k_proj", "v_proj", "q_proj", "o_proj"]  # fmt: skip
+conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
 # conf.target_modules = ["gate_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in conf.target_modules)
@@ -115,7 +115,8 @@ for beginning, ending in [
     # ("The Brandenburg Gate is in", "Berlin"),
     # ("The oldest building in the world is", "The Great Pyramid of Giza"),
 ]:
-    _g = get_grad_from_example(model, beginning, ending)
+    # _g = get_grad_from_example(model, beginning, ending, loss_fn_name="cross_entropy")
+    _g = get_grad_from_example(model, beginning, ending, loss_fn_name="correct_logit")
     vs.append(_g)
 
 res = []
@@ -138,7 +139,7 @@ for final in [
 
     ratio = bad / good
     cossim = bad / (good * _target_norm2).sqrt()
-    print(f"{ratio:7.4f}   {cossim:7.4f}   {bad:5.2f} {good:5.2f}")
+    print(f"{ratio=:7.4f}   {cossim=:7.4f}   {bad=:9.2f}   {good=:9.2f}")
 
     # bad = list(bad.values())
     # good = list(good.values())
@@ -167,3 +168,5 @@ for final in [
 # final = final - (final * to_avoid).sum() * to_avoid
 # final = final.reshape(vs[0].shape)
 
+
+# %%

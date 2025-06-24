@@ -38,9 +38,10 @@ set_seeds(42)
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 # ! limit which parameters are trained
-conf.target_modules = ["gate_proj"]
+# conf.target_modules = ["gate_proj"]
 # conf.target_modules = ["up_proj"]
 # conf.target_modules = ["down_proj"]
+conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
 
 wmdp_T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
 wmdp_V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
@@ -111,11 +112,14 @@ def prepare_model():
     for n, p in model.named_parameters():
         p.requires_grad = any(pattern in n for pattern in conf.target_modules)
 
-        # # * freeze early layers
-        # if ".layers." in n:
-        #     layer_num = int(n.split(".")[2])
-        #     if layer_num < 16:
-        #         p.requires_grad = False
+        if ".layers." in n:
+            layer_num = int(n.split(".")[2])
+            # # * freeze early layers
+            # if layer_num < 16:
+            # p.requires_grad = False
+            # * use only every some layers to save memory
+            if layer_num % 4 != 0:
+                p.requires_grad = False
 
     # * register hooks
     for n, module in trainable_modules(model):
@@ -140,7 +144,7 @@ def get_metrics(model):
         with pt.no_grad():
             res["mmlu_loss"] += get_loss(model, full_batch).item()
             # note that we calculate disruption on full output, not just the answer
-    
+
     # ! eval fineweb
     res["fineweb_loss"] = 0
     for ex in fineweb_bio.select(range(8)):
@@ -150,17 +154,22 @@ def get_metrics(model):
 
     # ! eval wmdp mcq
     res["wmdp_acc"] = eval_on(wmdp_V, model, temperature=1)
-    
+
     print(f"epoch {epoch} forget={res['forget_loss']:7.4f}, mmlu={res['mmlu_loss']:7.4f}, fineweb={res['fineweb_loss']:7.4f}, wmdp={res['wmdp_acc']:7.4f}")  # fmt: skip
     return res
 
 
 # %% first pass through forget corpus, to collect acts and grads
-pt.cuda.empty_cache()
+
+try:
+    del model, optimizer, retain_optimizer, acts_list, grads_list, act_means, grad_means, act_pca_components
+    pt.cuda.empty_cache()
+except:
+    pass
 model = prepare_model()
 
 run_conf = SimpleNamespace(
-    # lr=0.04,
+    # lr=0.001,
     lr=0.01,
     retain_lr=0.0003,
     normalize=False,
@@ -168,15 +177,11 @@ run_conf = SimpleNamespace(
     loss_fn_name="correct_logit",
     num_pc=10,
     # techniques=[],
-    # techniques=["dm_agg"],
     # techniques=["act"],
-    # techniques=["dm_act"],
-    techniques=["act", "pca", "wikitext_ctrl", "CL0", "PC10", "context_undisrupt"],
-    # techniques=["act", "pca", "CL-20", "PC10"],
-    # techniques=["act", "grad"],
-    # techniques=["act", "pca", "dm_act"],
+    # techniques=["dm_agg"],
     # techniques=["act", "grad", "pca"],
     # techniques=["dm_act", "dm_grad"],
+    techniques=["act", "pca", "wikitext_ctrl"],
 )
 
 
@@ -240,11 +245,14 @@ model = prepare_model()
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.lr)
 retain_optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.retain_lr)
 
-run_name = " ".join(run_conf.techniques) + f" lr{run_conf.lr} rlr{run_conf.retain_lr} pc{run_conf.num_pc}"
+run_name = (
+    f"{run_conf.loss_fn_name} lr{run_conf.lr} rlr{run_conf.retain_lr} pc{run_conf.num_pc} "
+    + " ".join(run_conf.techniques)
+)
 wandb.init(
     project="unlearning-wmdp4",
     name=run_name,
-    group=f"tv",
+    group=f"tv-all_module_types",
     config=OmegaConf.to_container(conf),
 )
 
@@ -318,7 +326,7 @@ for epoch in range(200):
             if "dm_agg" in run_conf.techniques:
                 coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
                 m.weight.grad[m.weight.grad.sign() != coarse.sign()] = 0
-            
+
             # # * A-GEM on coarse 2D grad
             # if "agem_agg" in run_conf.techniques:
             #     coarse = grad_means[n].reshape(-1, 1) @ act_means[n].reshape(1, -1)
@@ -347,7 +355,7 @@ print(f"time taken: {time.time() - start_time:.2f}s")
 wandb.init(
     project="unlearning-wmdp4-retrain",
     name=run_name,
-    group=f"tv",
+    group=f"tv-all_module_types",
     config=OmegaConf.to_container(conf),
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=0.001)
