@@ -1,0 +1,107 @@
+import torch as pt
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from utils.training import trainable_modules
+
+
+def save_act_hook(module, args):
+    # ignore BOS token and the last token
+    module.last_act_full = args[0].detach().clone()[:, 1:-1]
+
+
+def save_grad_hook(module, args):
+    # ignore BOS token and the last token
+    module.last_grad_full = args[0].detach().clone()[:, 1:-1]
+
+
+def prepare_model(conf, use_every_n_layers=None):
+    # * load model
+    model = AutoModelForCausalLM.from_pretrained(
+        conf.model_id, torch_dtype=pt.bfloat16, device_map=conf.device
+    )
+    model.config.use_cache = False
+
+    # * set trainable params
+    for n, p in model.named_parameters():
+        p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+        # * limit which layers are trained
+        if ".layers." in n:
+            layer_num = int(n.split(".")[2])
+            # # * freeze early layers
+            # if layer_num < 16:
+            # p.requires_grad = False
+            # * use only every some layers to save memory
+            if use_every_n_layers is not None:
+                if layer_num % use_every_n_layers != 0:
+                    p.requires_grad = False
+
+    # * register hooks
+    for n, module in trainable_modules(model):
+        module.register_forward_pre_hook(save_act_hook)
+        module.register_full_backward_pre_hook(save_grad_hook)
+
+    return model
+
+
+def get_last_act(module, attn_mask):
+    final_mask = attn_mask.bool()[:, 1:-1]
+    return module.last_act_full[final_mask]
+
+
+def get_last_grad(module, attn_mask):
+    final_mask = attn_mask.bool()[:, 1:-1]
+    return module.last_grad_full[final_mask]
+
+
+# but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it
+def get_act_principal_components(model, texts, num_pc=8, exact_pca=False):
+    # ! gather acts
+    acts_list = {n: [] for n, _ in trainable_modules(model)}
+
+    for text in texts:
+        batch = tokenizer(text, **conf.tokenizer)
+        output = model(**batch, output_hidden_states=True)
+
+        for n, module in trainable_modules(model):
+            acts_list[n].append(get_last_act(module, batch["attention_mask"]))
+
+    # start_time = time.time()
+    # ! calculate projection basis
+    act_means = {}
+    act_pca_components = {}
+    for n, module in trainable_modules(model):
+        acts_flattened = pt.cat(acts_list.pop(n)).float()
+        act_means[n] = acts_flattened.mean(axis=0)
+        # ! calculate act PCA
+        if exact_pca:
+            act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
+        else:
+            _, S, V= pt.pca_lowrank(acts_flattened, num_pc, niter=2)
+            act_pca_components[n] = V.T
+    # print(time.time() - start_time)
+        
+    return act_means, act_pca_components
+
+
+# ! to also include grads:
+# acts_list = {n: [] for n, _ in trainable_modules(model)}
+# # grads_list = {n: [] for n, _ in trainable_modules(model)}
+
+# # gather acts and grads
+# for ex in deception_set.select(range(20)):
+#     print(".")
+#     beginning_txt = ex["context"][-400:]
+#     full_txt = f"{beginning_txt} {ex['answer']}"
+
+#     # note: when not using grad, we could not use answer_mask
+#     beginning_batch = tokenizer(beginning_txt, **conf.tokenizer)
+#     batch = tokenizer(full_txt, **conf.tokenizer)
+#     answer_mask = prepare_answer_mask(beginning_batch, batch)
+
+#     output = model(**batch, output_hidden_states=True)
+#     loss = loss_fn(output, batch, answer_mask)
+#     # loss.backward()
+
+#     for n, module in trainable_modules(model):
+#         acts_list[n].append(get_last_act(module, batch["attention_mask"]))
+#         # grads_list[n].append(get_last_act(module, batch["attention_mask"]))

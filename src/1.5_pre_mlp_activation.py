@@ -2,10 +2,12 @@
 # %load_ext autoreload
 # %autoreload 2
 import json
+import time
 import logging
 import os
 import random
 from copy import deepcopy
+from types import SimpleNamespace
 
 import hydra
 import matplotlib.colors as mcolors
@@ -25,6 +27,7 @@ from utils.evals import eval_on, format_prompt
 from utils.git_and_reproducibility import repo_root
 from utils.hooks import CalcSimilarityHooks
 from utils.plots import visualize, visualize_rgb
+from utils.common_cir import *
 from utils.training import (
     PCA_gpu,
     get_grad,
@@ -38,41 +41,32 @@ from utils.training import (
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
-device = "cuda" if pt.cuda.is_available() else "cpu"
-pt.set_default_device(device)
+
 conf = OmegaConf.load("../configs/transferability.yaml")
-conf.model_id = "meta-llama/Llama-3.2-1B"
+# conf.model_id = "meta-llama/Llama-3.2-1B"
+conf.model_id = "HuggingFaceTB/SmolLM-135M"
+# conf.target_modules = ["gate_proj"]
+conf.target_modules = ["down_proj"]
+conf.device = "cuda" if pt.cuda.is_available() else "cpu"
 
 # ! setup
 set_seeds(42)
+pt.set_default_device(conf.device)
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
-
 tokenizer.pad_token = tokenizer.eos_token
-model = AutoModelForCausalLM.from_pretrained(
-    conf.model_id, torch_dtype=pt.bfloat16, device_map=device
-)
-model.config.use_cache = False
-# ! limit which parameters are trained
-conf.target_modules = ["gate_proj"]
-# conf.target_modules = ["up_proj"]
-# conf.target_modules = ["down_proj"]
-for n, p in model.named_parameters():
-    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-# model.model.layers[-1].mlp.down_proj.weight.requires_grad = False
+model = prepare_model(conf)
 
-wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-# fineweb_bio = load_fineweb_bio_corpus()
-mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
+deception_set = load_local("machiavelli/deception/psy-high.jsonl")
 
 
-def get_grad_from_example(model, beginning, ending, only_grad_ending=True, loss_fn_name="cross_entropy"):
-    full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-    if only_grad_ending:
-        beginning_batch = tokenizer(beginning, **conf.tokenizer)
-        loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-        return get_grad(model, full_batch, loss_mask, loss_fn_name=loss_fn_name)
-    else:
-        return get_grad(model, full_batch, loss_fn_name=loss_fn_name)
+# def get_grad_from_example(model, beginning, ending, only_grad_ending=True, loss_fn_name="cross_entropy"):
+#     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
+#     if only_grad_ending:
+#         beginning_batch = tokenizer(beginning, **conf.tokenizer)
+#         loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+#         return get_grad(model, full_batch, loss_mask, loss_fn_name=loss_fn_name)
+#     else:
+#         return get_grad(model, full_batch, loss_fn_name=loss_fn_name)
 
 
 def project_out(base, unwanted):
@@ -80,43 +74,71 @@ def project_out(base, unwanted):
     magnitudes = (base * unwanted).sum(axis=-1)
     return pt.einsum("t,s->ts", magnitudes, unwanted)
 
+# %%
+# * note: some actions in machiavelli, seem like responses, while they are actually "internal thoughts" summarizying the action, so clean them up? 
 
-# def get_grad_from_abcd_question(model, question):
-#     beginning = format_prompt(question)
-#     ending = ["A", "B", "C", "D"][question["answer"]]
-#     return get_grad_from_example(model, beginning, ending)
+run_conf = SimpleNamespace(
+    loss_fn_name="correct_logit",
+    # loss_fn_name = "cross_entropy",
+    num_pc=8,
+)
+loss_fn = getattr(loss_fns, run_conf.loss_fn_name)
 
+# ! first pass through forget corpus, to collect acts and grads
+act_means, act_pca_components = get_act_principal_components(
+    model,
+    [f"{e['context'][-400:]} {e['answer']}" for e in deception_set.select(range(20))],
+    num_pc=run_conf.num_pc,
+)
 
-def save_act_hook(module, args):
-    module.last_act = args[0].detach().clone()
+# (pt.tensor(act_pca_components[n]) * ref).sum(dim=1).abs()
+# ref = act_pca_components[n]
 
+# note: on CPU, pca_lowrank is 3x faster than PCA_gpu
+# but there are some differences (numerical?) on later components
+# sklearn agrees with PCA_gpu, so looks that pca_lowrank is inaccurate after 8 PCs
+# on CPU:
+# PCA_gpu: 2s
+# pca_lowrank: 0.7s
+# sklearn pca: 26s! (and seems to be higher precision)
+# wow, but for down_proj it's 30x faster!
+# PCA_gpu: 60s
+# pca_lowrank: 2s
+# 
 
-def save_grad_hook(module, args):
-    last_grad = args[0].detach().clone()
-    last_grad = last_grad[0, 1:-1]
-    last_act = module.last_act[0, 1:-1]
-    # last_grad = last_grad[0, :-1]  # include BOS
-    # last_act = module.last_act[0, :-1]  # include BOS
-    # last_grad = last_grad[0, beginning_len - 1 : beginning_len]
-    # last_act = module.last_act[0, beginning_len - 1 : beginning_len]
-    # last_grad = last_grad[0, beginning_len - 1 :]
-    # last_act = module.last_act[0, beginning_len - 1 :]
+# %% get the disruption grads
+model.zero_grad(set_to_none=True)
+for ex in deception_set.select(range(20, 24)):
+    if not ex["alt_answers"]:
+        print("skipping")
+        continue
+    
+    print(".")
+    beginning_txt = ex["context"][-400:]
+    full_txt = f"{beginning_txt} {ex['alt_answers'][0]}"
 
-    module.saved_acts.append(last_act)
-    module.saved_grads.append(last_grad)
+    beginning_batch = tokenizer(beginning_txt, **conf.tokenizer)
+    batch = tokenizer(full_txt, **conf.tokenizer)
+    answer_mask = prepare_answer_mask(beginning_batch, batch)
 
-
-for n, module in trainable_modules(model):
-    module._forward_pre_hooks.clear()
-    module._backward_pre_hooks.clear()
-    module.register_forward_pre_hook(save_act_hook)
-    module.register_full_backward_pre_hook(save_grad_hook)
-    module.saved_acts = []
-    module.saved_grads = []
+    output = model(**batch, output_hidden_states=True)
+    loss = loss_fn(output, batch, answer_mask)
+    loss.backward()
 
 # %%
-# loss_fn_name = "correct_logit"
-loss_fn_name = "cross_entropy"
+
+disr_grads = TensorDict(
+    {n: p.grad for n, p in model.named_parameters() if p.requires_grad},
+)
+model.zero_grad(set_to_none=True)
+
+
+
+# %%
+ex
+# %%
+
+
 
 # * the first is "from" grad, the rest are "control" grads
 forget_id = 20

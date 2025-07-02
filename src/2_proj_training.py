@@ -19,22 +19,23 @@ import wandb
 from utils import loss_fns
 from utils.data_loading import load_fineweb_bio_corpus, load_local
 from utils.evals import eval_on
+from utils.common_cir import *
 from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
 
 # plt dark theme
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
-pt.set_default_device("cuda")
 conf = OmegaConf.load("../configs/transferability.yaml")
 conf.model_id = "meta-llama/Llama-3.2-3B"
+conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
+conf.device = "cuda" if pt.cuda.is_available() else "cpu"
 
 # ! setup
 set_seeds(42)
+pt.set_default_device(conf.device)
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
 tokenizer.pad_token = tokenizer.eos_token
-# ! limit which parameters are trained
-conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
 
 wmdp_T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
 wmdp_V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
@@ -79,41 +80,6 @@ def get_loss(model, batch, answer_mask=None, loss_fn_name="cross_entropy"):
     return loss_fn(output, batch, answer_mask)
 
 
-def save_act_hook(module, args):
-    # ignore BOS token and the last token
-    module.last_act_full = args[0].detach().clone()[:, 1:-1]
-
-
-def save_grad_hook(module, args):
-    # ignore BOS token and the last token
-    module.last_grad_full = args[0].detach().clone()[:, 1:-1]
-
-
-def prepare_model():
-    # * load model
-    model = AutoModelForCausalLM.from_pretrained(
-        conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-    )
-    model.config.use_cache = False
-    # * set trainable params
-    for n, p in model.named_parameters():
-        p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-
-        if ".layers." in n:
-            layer_num = int(n.split(".")[2])
-            # # * freeze early layers
-            # if layer_num < 16:
-            # p.requires_grad = False
-            # * use only every some layers to save memory
-            if layer_num % 4 != 0:
-                p.requires_grad = False
-
-    # * register hooks
-    for n, module in trainable_modules(model):
-        module.register_forward_pre_hook(save_act_hook)
-        module.register_full_backward_pre_hook(save_grad_hook)
-    return model
-
 
 def get_metrics(model):
     res = {}
@@ -151,7 +117,7 @@ if "model" in globals():
     # cleanup
     del model, acts_list, grads_list, act_means, grad_means, act_pca_components, inspect_batches, training_batches, control_batches_gens
     pt.cuda.empty_cache()
-model = prepare_model()
+model = prepare_model(conf, use_every_n_layers=4)
 
 run_conf = SimpleNamespace(
     # lr=0.001,
@@ -216,10 +182,9 @@ for batch in itertools.chain(*control_batches_gens):
     _mask = batch.get("answer_mask", None)
     loss = get_loss(model, batch, _mask, run_conf.loss_fn_name)
     loss.backward()
-    attn_mask = batch["attention_mask"].bool()[:, 1:-1]
     for n, module in trainable_modules(model):
-        acts_list[n].append(module.last_act_full[attn_mask])
-        grads_list[n].append(module.last_grad_full[attn_mask])
+        acts_list[n].append(get_last_act(module, batch["attention_mask"]))
+        grads_list[n].append(get_last_act(module, batch["attention_mask"]))
 
 # ! calculate projection basis
 grad_means = {}
@@ -235,7 +200,7 @@ for n, module in trainable_modules(model):
 
 del model
 pt.cuda.empty_cache()
-model = prepare_model()
+model = prepare_model(conf, use_every_n_layers=4)
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.lr)
 retain_optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.retain_lr)
 
@@ -289,10 +254,9 @@ for epoch in range(10):
         loss.backward()
 
         # ! here we modify the grad
-        attn_mask = batch["attention_mask"].bool()[:, 1:-1]
         for n, m in trainable_modules(model):
-            grads = m.last_grad_full[attn_mask]
-            acts = m.last_act_full[attn_mask]
+            grads = get_last_act(m, batch["attention_mask"])
+            acts = get_last_act(m, batch["attention_mask"])
             assert len(acts.shape) == len(grads.shape) == 2
 
             # ! proj out the means
