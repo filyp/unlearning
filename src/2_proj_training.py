@@ -21,12 +21,13 @@ from utils.data_loading import load_fineweb_bio_corpus, load_local
 from utils.evals import eval_on
 from utils.common_cir import *
 from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
+from utils.git_and_reproducibility import repo_root
 
 # plt dark theme
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
-conf = OmegaConf.load("../configs/transferability.yaml")
+conf = OmegaConf.load(repo_root() / "configs/transferability.yaml")
 conf.model_id = "meta-llama/Llama-3.2-3B"
 conf.target_modules = ["gate_proj", "up_proj", "down_proj"]
 conf.device = "cuda" if pt.cuda.is_available() else "cpu"

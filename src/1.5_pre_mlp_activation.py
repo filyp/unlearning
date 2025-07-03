@@ -42,7 +42,7 @@ plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
 
-conf = OmegaConf.load("../configs/transferability.yaml")
+conf = OmegaConf.load(repo_root() / "configs/transferability.yaml")
 # conf.model_id = "meta-llama/Llama-3.2-1B"
 conf.model_id = "HuggingFaceTB/SmolLM-135M"
 # conf.target_modules = ["gate_proj"]
