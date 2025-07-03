@@ -59,6 +59,7 @@ def trainable_modules(model):
 
 
 def get_grad(model, batch, loss_mask=None, loss_fn_name="cross_entropy"):
+    # deprecated
     model.zero_grad(set_to_none=True)
     output = model(**batch)
     if loss_mask is not None:
@@ -83,11 +84,11 @@ def prepare_answer_mask(beginning_batch, full_batch):
     return answer_mask
 
 
-def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
-    beginning_batch = tokenizer(beginning, **conf.tokenizer)
-    full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-    loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    return get_grad(model, full_batch, loss_mask)
+# def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
+#     beginning_batch = tokenizer(beginning, **conf.tokenizer)
+#     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
+#     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+#     return get_grad(model, full_batch, loss_mask)
 
 
 def PCA_gpu(v, n_components=10, center=True):
@@ -104,6 +105,14 @@ def PCA_gpu(v, n_components=10, center=True):
     eigenvectors = eigenvectors[:, idx]
     # Get the top n_components
     return eigenvectors.T[:n_components]
+
+
+def get_grads_dict(model):
+    grads_dict = TensorDict(
+        {n: p.grad for n, p in model.named_parameters() if p.requires_grad},
+    )
+    model.zero_grad(set_to_none=True)
+    return grads_dict
 
 
 # def make_sure_optimal_values_are_not_near_range_edges(study):

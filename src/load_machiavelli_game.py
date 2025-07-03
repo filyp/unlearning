@@ -9,7 +9,7 @@ from utils.git_and_reproducibility import repo_root
 
 
 def load_game_metadata():
-    metadata_file = repo_root() / "game_data" / "game_metadata.json"
+    metadata_file = repo_root() / "data" / "game_data" / "game_metadata.json"
     with open(metadata_file, 'r') as f:
         return json.load(f)
 
@@ -18,7 +18,7 @@ def load_game_data(game_name="dragon"):
     """Load scenarios and annotations for a specific game."""
     
     # Get the game data directory
-    game_data_dir = repo_root() / "game_data"
+    game_data_dir = repo_root() / "data" / "game_data"
     
     # Load scenarios
     scenarios_file = game_data_dir / "scenarios" / f"{game_name}_scenarios_bfs_filled.json"
@@ -102,7 +102,7 @@ def get_situations_with_trait(trait="deception", game_name="deathless"):
 
 # %%
 trait = "deception"
-game_name = "deathless"
+game_name = "psy-high"
 use_last_n_parents = 5
 
 corpus = []

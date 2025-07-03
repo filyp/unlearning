@@ -1,6 +1,7 @@
+import time
 import torch as pt
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from utils.training import trainable_modules
+from utils.training import PCA_gpu, trainable_modules
 
 
 def save_act_hook(module, args):
@@ -54,13 +55,12 @@ def get_last_grad(module, attn_mask):
 
 
 # but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it
-def get_act_principal_components(model, texts, num_pc=8, exact_pca=False):
+def get_act_principal_components(model, batches, num_pc=8, exact_pca=False, niter=8):
     # ! gather acts
     acts_list = {n: [] for n, _ in trainable_modules(model)}
 
-    for text in texts:
-        batch = tokenizer(text, **conf.tokenizer)
-        output = model(**batch, output_hidden_states=True)
+    for batch in batches:
+        model(**batch, output_hidden_states=True)
 
         for n, module in trainable_modules(model):
             acts_list[n].append(get_last_act(module, batch["attention_mask"]))
@@ -76,11 +76,34 @@ def get_act_principal_components(model, texts, num_pc=8, exact_pca=False):
         if exact_pca:
             act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
         else:
-            _, S, V= pt.pca_lowrank(acts_flattened, num_pc, niter=2)
+            _, S, V= pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
             act_pca_components[n] = V.T
     # print(time.time() - start_time)
         
     return act_means, act_pca_components
+
+
+# # for comparing similarity of full and approximate PCA
+# ref = list(act_pca_components.values())[0]
+# (ref2 * ref).sum(dim=1).abs()
+
+
+# note: on CPU, pca_lowrank is 3x faster than PCA_gpu
+# but there are some differences (numerical?) on later components
+# sklearn agrees with PCA_gpu, so looks that pca_lowrank is inaccurate after 8 PCs
+# on CPU:
+# PCA_gpu: 2s
+# pca_lowrank: 0.7s
+# sklearn pca: 26s! (and seems to be higher precision)
+# wow, but for down_proj it's 30x faster!
+# PCA_gpu: 60s
+# pca_lowrank: 2s
+# on GPU (and down_proj) it's even more drastic:
+# 45s vs 0.1s, 450x
+# on gate_proj:
+# 1.4s vs 0.04, so 35x
+# somehow on gpu it's more drastic
+# with niter=8, for 8 PCs accuracy is decent, and speed drop is not that bad (only 2x worse than niter=2)
 
 
 # ! to also include grads:
