@@ -119,7 +119,7 @@ for n, module in trainable_modules(model):
 loss_fn_name = "cross_entropy"
 
 # * the first is "from" grad, the rest are "control" grads
-forget_id = 20
+forget_id = 18
 assert forget_id >= 6, "first six are disr evals"
 q = wmdp[forget_id]
 context = q["contexts"][0]
@@ -199,7 +199,7 @@ for n, module in trainable_modules(model):
     # acts[acts.sign() == act_mean.sign()] = 0
     # grads[grads.sign() == grad_mean.sign()] = 0
     acts -= project_out(acts, act_mean)
-    grads -= project_out(grads, grad_mean)
+    # grads -= project_out(grads, grad_mean)
 
     # ! project out acts PCs
     #  but from acts, improvement is almost 2x
@@ -288,8 +288,8 @@ print("sum of disruption:", ratios[:, :, 0].sum())
 print("sum of forget:", ratios[:, :, 1].sum())
 print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
 ratios2 = ratios.copy()
-ratios2[:, :, 0] *= 1
-visualize_rgb(ratios2, scale=1)
+# ratios2[:, :, 0] *= 30
+visualize_rgb(ratios2, scale=30)
 
 # %% visualize per layer (aggregated examples)
 # green is high ration of disr to forget (so it's bad)

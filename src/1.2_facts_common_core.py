@@ -44,7 +44,7 @@ plt.style.use("dark_background")
 logging.basicConfig(level=logging.INFO)
 
 conf = OmegaConf.load(repo_root() / "configs/transferability.yaml")
-conf.model_id = "meta-llama/Llama-3.2-1B"
+conf.model_id = "meta-llama/Llama-3.2-3B"
 # conf.model_id = "HuggingFaceTB/SmolLM-135M"
 conf.target_modules = ["gate_proj"]
 # conf.target_modules = ["down_proj"]
@@ -57,7 +57,8 @@ tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 model = prepare_model(conf)
 
-deception_set = load_local("machiavelli/deception/psy-high.jsonl")
+# deception_set = load_local("machiavelli/deception/psy-high.jsonl")
+wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
 
 
 def project_out(base, unwanted):
@@ -71,71 +72,80 @@ def project_out(base, unwanted):
     return pt.einsum("t,s->ts", magnitudes, unwanted)
 
 
-def get_loss(model, beginning_txt, full_txt, loss_fn):
+def get_loss(model, beginning_txt, full_txt, loss_fn, only_ans=True):
     # note: assumes tokenizer is in scope
     # only grads on the answer
 
     beginning_batch = tokenizer(beginning_txt, **conf.tokenizer)
     batch = tokenizer(full_txt, **conf.tokenizer)
     answer_mask = prepare_answer_mask(beginning_batch, batch)
+    if not only_ans:
+        answer_mask = None
 
     output = model(**batch, output_hidden_states=True)
     return loss_fn(output, batch, answer_mask)
 
 
-# %% create usable datasets
-deceptive_pairs = []
-undeceptive_pairs = []
-for ex in deception_set:
-    if not ex["alt_answers"]:
-        print("skipping")
-        continue
-
-    beginning_txt = ex["context"][-400:]
-    undeceptive_txt = f"{beginning_txt} {ex['alt_answers'][0]}"
-    deceptive_txt = f"{beginning_txt} {ex['answer']}"
-
-    undeceptive_pairs.append((beginning_txt, undeceptive_txt))
-    deceptive_pairs.append((beginning_txt, deceptive_txt))
-print(len(undeceptive_pairs), len(deceptive_pairs))
-
-# %%
-# * note: some actions in machiavelli, seem like responses, while they are actually "internal thoughts" summarizying the action, so clean them up?
-
+# %% settings
 run_conf = SimpleNamespace(
     loss_fn_name="correct_logit",
     num_pc=8,
 )
 loss_fn = getattr(loss_fns, run_conf.loss_fn_name)
 
-# ! first pass through forget corpus, to collect acts and grads
-act_means, act_pca_components = get_act_principal_components(
-    model,
-    # [tokenizer(f, **conf.tokenizer) for b, f in undeceptive_pairs[:15]],
-    [tokenizer(f, **conf.tokenizer) for b, f in deceptive_pairs[:15]],
-    num_pc=run_conf.num_pc,
-)
-
 # %% get the disruption grads
 model.zero_grad(set_to_none=True)
-for beginning_txt, full_txt in undeceptive_pairs[15:30]:
-    loss = get_loss(model, beginning_txt, full_txt, loss_fn)
+for id_ in range(6):
+    q_alt = wmdp[id_]
+    beginning_txt = q_alt["contexts"][0]
+    full_txt = beginning_txt + " " + q_alt["answer_core"]
+
+    loss = get_loss(model, beginning_txt, full_txt, loss_fn, only_ans=False)
     loss.backward()
 
 disr_grads = get_grads_dict(model)
 
-# %% get the target grads
+# %% get control for the without-feature set
+without_act_means, without_act_pca_components = get_act_principal_components(
+    model,
+    [
+        tokenizer(f"{c} {qc['answer_core']}", **conf.tokenizer)
+        for qc in wmdp.select(range(6, 24))
+        for c in qc["contexts"]
+    ],
+    num_pc=run_conf.num_pc,
+)
+
+# %% this cell groups operations which need to be rerun when changing the forget id
+
+forget_id = 16
+assert forget_id >= 6, "first six are disr evals"
+q = wmdp[forget_id]
+
+# ! get the target grads
 model.zero_grad(set_to_none=True)
-for beginning_txt, full_txt in deceptive_pairs[15:30]:
+for context in q["contexts"][-3:]:
+    beginning_txt = context
+    full_txt = f"{beginning_txt} {q['answer_core']}"
+
     loss = get_loss(model, beginning_txt, full_txt, loss_fn)
     loss.backward()
-
 target_grads = get_grads_dict(model)
 
-# %% get the forget grad
-forget_id = 30
-assert forget_id >= 30
-beginning_txt, full_txt = deceptive_pairs[forget_id]
+# ! get control for the with-feature set
+q = wmdp[forget_id]
+with_act_means, with_act_pca_components = get_act_principal_components(
+    model,
+    [
+        tokenizer(f"{c} {q['answer_core']}", **conf.tokenizer)
+        for c in q["contexts"][1:-3]
+    ],
+    num_pc=run_conf.num_pc,
+)
+
+# %% get the forget grads
+beginning_txt = q["contexts"][0]
+full_txt = f"{beginning_txt} {q['answer_core']}"
 batch = tokenizer(full_txt, **conf.tokenizer)
 
 model.zero_grad(set_to_none=True)
@@ -146,21 +156,26 @@ model.zero_grad(set_to_none=True)
 
 per_module_grads = {}
 for n, module in trainable_modules(model):
-    act_in = get_last_act(module, batch["attention_mask"])
-    grad_out = get_last_grad(module, batch["attention_mask"])
-    org_act_in = act_in.clone()
-
+    act_in = get_last_act(module, batch["attention_mask"]).float()
+    grad_out = get_last_grad(module, batch["attention_mask"]).float()
+ 
     # ! CIR
-    act_in -= project_out(act_in, act_means[n])
-    for pc in act_pca_components[n]:
+
+    act_in -= project_out(act_in, without_act_means[n])
+
+    for pc in without_act_pca_components[n]:
         act_in -= project_out(act_in, pc)
 
-    # ! common core!
-    act_in = org_act_in - act_in
-
+    # # ! common core! (reversed?) anyway, it's terrible
+    # act_in_checkpoint = act_in.clone()
+    # act_in -= project_out(act_in, with_act_means[n])
+    # # for pc in with_act_pca_components[n][:1]:
+    #     # act_in -= project_out(act_in, pc)
+    # act_in = act_in_checkpoint - act_in
+ 
     per_module_grads[n] = pt.einsum("ti,to->oi", act_in, grad_out)
 
-# %% visualize example x layer
+# % visualize example x layer
 # green is good transfer, red is bad transfer
 
 _row = []
@@ -172,7 +187,8 @@ for n, _ in trainable_modules(model):
     good_transfer = (target_grad * forget_grad).sum().item()
     bad_transfer = (disr_grad * forget_grad).sum().item()
 
-    _row.append([np.clip(bad_transfer, min=0), good_transfer, 0])  # rgb
+    # _row.append([np.clip(bad_transfer, min=0), good_transfer, 0])  # rgb
+    _row.append([np.abs(bad_transfer), good_transfer, 0])  # rgb
 
 ratios = np.array(_row).reshape(1, -1, 3)
 
@@ -181,22 +197,4 @@ print("sum of forget:", ratios[:, :, 1].sum())
 print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
 ratios2 = ratios.copy()
 ratios2[:, :, 0] *= 1
-visualize_rgb(ratios2, scale=348)
-
-# %%
-
-
-# # %% visualize per layer (aggregated examples)
-# # green is high ration of disr to forget (so it's bad)
-# q = wmdp[forget_id]
-# context = q["contexts"][0]
-# print(context + " " + q["answer_core"])
-# for txt, disr in zip(disr_texts, ratios[:, :, 0].sum(axis=1)):
-#     print(disr, txt)
-
-# # * visualize ratio per layer
-# disr_per_layer = ratios[:, :, 0].sum(axis=0)
-# forget_per_layer = ratios[:, :, 1].sum(axis=0)
-# # visualize(disr_per_layer)
-# visualize(forget_per_layer)
-# # visualize(disr_per_layer / forget_per_layer)
+visualize_rgb(ratios2, scale=940)
