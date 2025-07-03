@@ -5,3 +5,10 @@
 - src/generation.py - generate pair corpus from ABCD examples
 
 The `.requirements_exact.txt` is tested with python3.13.
+
+# Installation
+```
+python -m pip install -r requirements.txt
+wandb login
+huggingface-cli login
+```
