@@ -109,15 +109,15 @@ def cross_entropy_per_token(output, batch):
     return -pt.log(true_probs)
 
 
-def stream_activation(output, batch):
-    # last activation is huge for some reason, so ignore it
-    acc = 0
-    flat_attn_mask = batch["attention_mask"].reshape(-1, 1)
-    for layer_acts in output.hidden_states[:-1]:
-        flat_acts = layer_acts.flatten(end_dim=1)
-        flat_acts *= flat_attn_mask
-        acc += flat_acts.norm(dim=-1).mean() ** 2
-    return acc / flat_attn_mask.sum()
+# def stream_activation(output, batch):
+#     # last activation is huge for some reason, so ignore it
+#     acc = 0
+#     flat_attn_mask = batch["attention_mask"].reshape(-1, 1)
+#     for layer_acts in output.hidden_states[:-1]:
+#         flat_acts = layer_acts.flatten(end_dim=1)
+#         flat_acts *= flat_attn_mask
+#         acc += flat_acts.norm(dim=-1).mean() ** 2
+#     return acc / flat_attn_mask.sum()
 
 
 # adapted from https://github.com/rishub-tamirisa/tamper-resistance/blob/41b749ca4d9bcb7608c7ead2ca48b0508714af99/modules/objectives.py#L114
@@ -140,109 +140,6 @@ def neg_entropy(output, batch) -> pt.Tensor:
     return neg_entropy.sum() / batch["attention_mask"].sum()
 
 
-def circuit_breaker_forget(
-    model,
-    forget_inputs,
-    target_layers,
-    frozen_model=None,
-    lora_model=None,
-):
-
-    # ===== loss components =====
-    layers_forget_attention_mask = (
-        forget_inputs["attention_mask"].repeat(len(target_layers), 1, 1).unsqueeze(-1)
-    )
-
-    if lora_model is not None and frozen_model is None:
-        lora_model.disable_adapter_layers()
-        frozen_model = model
-
-    if lora_model is None and frozen_model is None:
-        raise Exception("Function did not get frozen model and LoRA is disabled.")
-
-    assert frozen_model is not None
-
-    frozen_model.eval()
-    with pt.no_grad():
-        forget_outputs = frozen_model(
-            **forget_inputs, output_hidden_states=True
-        ).hidden_states
-        forget_hidden = pt.stack([forget_outputs[l].detach() for l in target_layers])
-    del forget_outputs
-    gc.collect()
-
-    if lora_model is not None:
-        lora_model.enable_adapter_layers()
-    model.train()
-
-    lora_forget_outputs = model(
-        **forget_inputs, output_hidden_states=True
-    ).hidden_states
-    lora_forget_hidden = pt.stack([lora_forget_outputs[l] for l in target_layers])
-
-    normalized_lora_forget_outputs = lora_forget_hidden / (
-        pt.norm(lora_forget_hidden, dim=-1, keepdim=True, dtype=pt.float)
-    )
-    normalized_forget_outputs = forget_hidden / (
-        pt.norm(forget_hidden, dim=-1, keepdim=True, dtype=pt.float)
-    )
-    inner_product = (
-        normalized_lora_forget_outputs * normalized_forget_outputs
-    ) * layers_forget_attention_mask
-    forget_loss = (
-        pt.relu(inner_product.sum(dim=-1)).sum() / layers_forget_attention_mask.sum()
-    )
-
-    return forget_loss
-
-
-def circuit_breaker_retain(
-    model, retain_inputs, frozen_model=None, lora_model=None, square_norm=False
-):
-
-    if lora_model is not None:
-        lora_model.disable_adapter_layers()
-        frozen_model = model
-
-    if lora_model is None and frozen_model is None:
-        raise Exception("Function did not get frozen model and LoRA is disabled.")
-
-    assert frozen_model is not None
-
-    frozen_model.eval()
-    with pt.no_grad():
-        orig_retain_outputs = frozen_model(
-            **retain_inputs, output_hidden_states=True
-        ).hidden_states
-        orig_retain_hidden = pt.stack(orig_retain_outputs).detach()
-        layers_retain_attention_mask = (
-            retain_inputs["attention_mask"]
-            .repeat(len(orig_retain_outputs), 1, 1)
-            .unsqueeze(-1)
-        )
-        orig_retain_hidden *= layers_retain_attention_mask
-
-    del orig_retain_outputs
-    gc.collect()
-
-    if lora_model is not None:
-        lora_model.enable_adapter_layers()
-    model.train()
-
-    lora_retain_outputs = model(
-        **retain_inputs, output_hidden_states=True
-    ).hidden_states
-    lora_retain_hidden = pt.stack(lora_retain_outputs) * layers_retain_attention_mask
-    diffs = lora_retain_hidden - orig_retain_hidden
-    # the last hidden state is anomalously high (at least for pythia)
-    diffs = diffs[:-1]
-
-    if square_norm:
-        return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).pow(2).nanmean()
-    else:
-        return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).nanmean()
-
-
 def print_colored_tokens(vals, batch, tokenizer):
     assert vals.abs().max() <= 1
 
@@ -261,6 +158,108 @@ def print_colored_tokens(vals, batch, tokenizer):
 
     display(HTML("".join(html_tokens)))
 
+
+# def circuit_breaker_forget(
+#     model,
+#     forget_inputs,
+#     target_layers,
+#     frozen_model=None,
+#     lora_model=None,
+# ):
+
+#     # ===== loss components =====
+#     layers_forget_attention_mask = (
+#         forget_inputs["attention_mask"].repeat(len(target_layers), 1, 1).unsqueeze(-1)
+#     )
+
+#     if lora_model is not None and frozen_model is None:
+#         lora_model.disable_adapter_layers()
+#         frozen_model = model
+
+#     if lora_model is None and frozen_model is None:
+#         raise Exception("Function did not get frozen model and LoRA is disabled.")
+
+#     assert frozen_model is not None
+
+#     frozen_model.eval()
+#     with pt.no_grad():
+#         forget_outputs = frozen_model(
+#             **forget_inputs, output_hidden_states=True
+#         ).hidden_states
+#         forget_hidden = pt.stack([forget_outputs[l].detach() for l in target_layers])
+#     del forget_outputs
+#     gc.collect()
+
+#     if lora_model is not None:
+#         lora_model.enable_adapter_layers()
+#     model.train()
+
+#     lora_forget_outputs = model(
+#         **forget_inputs, output_hidden_states=True
+#     ).hidden_states
+#     lora_forget_hidden = pt.stack([lora_forget_outputs[l] for l in target_layers])
+
+#     normalized_lora_forget_outputs = lora_forget_hidden / (
+#         pt.norm(lora_forget_hidden, dim=-1, keepdim=True, dtype=pt.float)
+#     )
+#     normalized_forget_outputs = forget_hidden / (
+#         pt.norm(forget_hidden, dim=-1, keepdim=True, dtype=pt.float)
+#     )
+#     inner_product = (
+#         normalized_lora_forget_outputs * normalized_forget_outputs
+#     ) * layers_forget_attention_mask
+#     forget_loss = (
+#         pt.relu(inner_product.sum(dim=-1)).sum() / layers_forget_attention_mask.sum()
+#     )
+
+#     return forget_loss
+
+
+# def circuit_breaker_retain(
+#     model, retain_inputs, frozen_model=None, lora_model=None, square_norm=False
+# ):
+
+#     if lora_model is not None:
+#         lora_model.disable_adapter_layers()
+#         frozen_model = model
+
+#     if lora_model is None and frozen_model is None:
+#         raise Exception("Function did not get frozen model and LoRA is disabled.")
+
+#     assert frozen_model is not None
+
+#     frozen_model.eval()
+#     with pt.no_grad():
+#         orig_retain_outputs = frozen_model(
+#             **retain_inputs, output_hidden_states=True
+#         ).hidden_states
+#         orig_retain_hidden = pt.stack(orig_retain_outputs).detach()
+#         layers_retain_attention_mask = (
+#             retain_inputs["attention_mask"]
+#             .repeat(len(orig_retain_outputs), 1, 1)
+#             .unsqueeze(-1)
+#         )
+#         orig_retain_hidden *= layers_retain_attention_mask
+
+#     del orig_retain_outputs
+#     gc.collect()
+
+#     if lora_model is not None:
+#         lora_model.enable_adapter_layers()
+#     model.train()
+
+#     lora_retain_outputs = model(
+#         **retain_inputs, output_hidden_states=True
+#     ).hidden_states
+#     lora_retain_hidden = pt.stack(lora_retain_outputs) * layers_retain_attention_mask
+#     diffs = lora_retain_hidden - orig_retain_hidden
+#     # the last hidden state is anomalously high (at least for pythia)
+#     diffs = diffs[:-1]
+
+#     if square_norm:
+#         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).pow(2).nanmean()
+#     else:
+#         return pt.norm(diffs, dim=-1, p=2, dtype=pt.float).nanmean()
 
 
 # def correct_logit_loss(output, input_ids):
@@ -351,29 +350,29 @@ def print_colored_tokens(vals, batch, tokenizer):
 #     return entropy.mean() * -1
 
 
-def non_target_disruption(output, batch, target_logits):
-    _vocab_size = output.logits.shape[2]
-    shifted_logits = output.logits[:, :-1, :].to(pt.float32)
-    shifted_target_logits = target_logits[:, :-1, :].detach().clone()
-    shifted_ids = batch["input_ids"][:, 1:]
-    shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
+# def non_target_disruption(output, batch, target_logits):
+#     _vocab_size = output.logits.shape[2]
+#     shifted_logits = output.logits[:, :-1, :].to(pt.float32)
+#     shifted_target_logits = target_logits[:, :-1, :].detach().clone()
+#     shifted_ids = batch["input_ids"][:, 1:]
+#     shifted_attn_mask = batch["attention_mask"][:, 1:] == 1
 
-    logits = shifted_logits[shifted_attn_mask]
-    target_logits_flat = shifted_target_logits[shifted_attn_mask]
-    ids = shifted_ids[shifted_attn_mask]
-    assert ids.shape == (shifted_attn_mask.sum(),)
-    assert logits.shape == target_logits_flat.shape == (ids.shape[0], _vocab_size)
+#     logits = shifted_logits[shifted_attn_mask]
+#     target_logits_flat = shifted_target_logits[shifted_attn_mask]
+#     ids = shifted_ids[shifted_attn_mask]
+#     assert ids.shape == (shifted_attn_mask.sum(),)
+#     assert logits.shape == target_logits_flat.shape == (ids.shape[0], _vocab_size)
 
-    target_logits_flat[pt.arange(len(target_logits_flat)), ids] = float("-inf")
-    target_probs = pt.nn.functional.softmax(target_logits_flat, dim=-1)
+#     target_logits_flat[pt.arange(len(target_logits_flat)), ids] = float("-inf")
+#     target_probs = pt.nn.functional.softmax(target_logits_flat, dim=-1)
 
-    # mask out the correct answer
-    # this is equivalent to the new_logit = []... code below
-    mask = pt.ones_like(logits, dtype=pt.bool)
-    mask[pt.arange(len(logits)), ids] = False
-    selected_logits = logits[mask].reshape(len(logits), _vocab_size - 1)
-    selected_target_probs = target_probs[mask].reshape(len(logits), _vocab_size - 1)
+#     # mask out the correct answer
+#     # this is equivalent to the new_logit = []... code below
+#     mask = pt.ones_like(logits, dtype=pt.bool)
+#     mask[pt.arange(len(logits)), ids] = False
+#     selected_logits = logits[mask].reshape(len(logits), _vocab_size - 1)
+#     selected_target_probs = target_probs[mask].reshape(len(logits), _vocab_size - 1)
 
-    return pt.nn.functional.cross_entropy(
-        input=selected_logits, target=selected_target_probs
-    )
+#     return pt.nn.functional.cross_entropy(
+#         input=selected_logits, target=selected_target_probs
+#     )

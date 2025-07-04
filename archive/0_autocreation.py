@@ -19,13 +19,6 @@ from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
-from utils import loss_fns
-from utils.data_loading import load_batches, load_fineweb_bio_corpus, load_local
-from utils.evals import eval_on, format_prompt
-from utils.git_and_reproducibility import repo_root
-from utils.hooks import CalcSimilarityHooks
-from utils.loss_fns import print_per_token_colored_loss
-from utils.plots import visualize_module_values, visualize_token_layer_values
 from utils.training import get_grad, get_grad_from_pair, prepare_answer_mask, set_seeds, trainable_params
 
 # plt dark theme

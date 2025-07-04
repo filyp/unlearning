@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unlearning"
+version = "0.1.0"
+description = "Unlearning research project"
+authors = [
+    {name = "Filip", email = "none@null.com"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "bitsandbytes",
+    "datasets",
+    "gunicorn",
+    "ipykernel",
+    "ipywidgets",
+    "matplotlib",
+    "optuna",
+    "optuna-dashboard",
+    "peft",
+    "scipy",
+    "torch",
+    "torcheval",
+    "transformers",
+    "wandb",
+    "plotly",
+    "nbformat",
+    "kaleido",
+    "psycopg2-binary",
+    "modal",
+    "PyYAML",
+    "hydra-core",
+    "tensordict",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

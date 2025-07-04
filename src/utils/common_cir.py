@@ -1,7 +1,20 @@
 import time
+
 import torch as pt
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from utils.training import PCA_gpu, trainable_modules
+
+
+def project_out(base, unwanted):
+    # check dimensions
+    _pos, _stream = base.shape
+    (_stream2,) = unwanted.shape
+    assert _stream == _stream2
+
+    unwanted = unwanted / unwanted.norm()
+    magnitudes = (base * unwanted).sum(axis=-1)
+    return pt.einsum("t,s->ts", magnitudes, unwanted)
 
 
 def save_act_hook(module, args):
@@ -76,10 +89,10 @@ def get_act_principal_components(model, batches, num_pc=8, exact_pca=False, nite
         if exact_pca:
             act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
         else:
-            _, S, V= pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
+            _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
             act_pca_components[n] = V.T
     # print(time.time() - start_time)
-        
+
     return act_means, act_pca_components
 
 

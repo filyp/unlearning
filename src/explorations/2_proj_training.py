@@ -6,14 +6,12 @@ import logging
 import time
 from types import SimpleNamespace
 
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
-import torch.nn.functional as F
-from datasets import Dataset, concatenate_datasets, load_dataset
+from datasets import concatenate_datasets, load_dataset
 from omegaconf import OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 
 import wandb
 from utils import loss_fns
@@ -46,12 +44,6 @@ mmlu_bio = load_local("OUTDATED/my_generation2/mmlu_high_school_biology.jsonl")
 wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train")
 # filter out empty texts from wikitext
 wikitext = wikitext.filter(lambda x: x["text"])
-
-
-def project_out(base, unwanted):
-    unwanted = unwanted / unwanted.norm()
-    magnitudes = (base * unwanted).sum(axis=-1)
-    return pt.einsum("t,s->ts", magnitudes, unwanted)
 
 
 def get_batches(dataset, range_, batch_size=16, with_answer_mask=True):

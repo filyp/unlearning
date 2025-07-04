@@ -1,22 +1,14 @@
 # %%
-import json
 import logging
-import os
-import random
-from copy import deepcopy
 
-import hydra
 import torch as pt
-from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
-from utils import loss_fns, masking
+from utils import masking
 from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
 from utils.evals import eval_on
-from utils.git_and_reproducibility import repo_root
-from utils.loss_fns import print_per_token_colored_loss
 from utils.training import set_seeds
 
 logging.basicConfig(level=logging.INFO)

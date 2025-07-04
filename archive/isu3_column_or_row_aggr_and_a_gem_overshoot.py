@@ -1,32 +1,15 @@
 # %%
 # %load_ext autoreload
 # %autoreload 2
-import json
 import logging
-import os
-import random
-from copy import deepcopy
 
-import hydra
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
-import torch.nn.functional as F
-from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from tensordict import TensorDict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-import wandb
-from utils import loss_fns
-from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
-from utils.evals import eval_on, format_prompt
-from utils.git_and_reproducibility import repo_root
-from utils.hooks import CalcSimilarityHooks
-from utils.loss_fns import print_per_token_colored_loss
-from utils.plots import visualize_module_values, visualize_token_layer_values
-from utils.training import get_grad, prepare_answer_mask, set_seeds, trainable_params
+from utils.training import get_grad, prepare_answer_mask, set_seeds
 
 # plt dark theme
 plt.style.use("dark_background")

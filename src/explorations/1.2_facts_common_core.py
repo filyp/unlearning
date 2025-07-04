@@ -1,41 +1,25 @@
 # %%
 # %load_ext autoreload
 # %autoreload 2
-import json
 import logging
-import os
-import random
-import time
-from copy import deepcopy
 from types import SimpleNamespace
 
-import hydra
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
-import torch.nn.functional as F
-from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from tensordict import TensorDict
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 
-import wandb
 from utils import loss_fns
 from utils.common_cir import *
-from utils.data_loading import load_batches, load_fineweb_edu_corpus, load_local
-from utils.evals import eval_on, format_prompt
+from utils.data_loading import load_local
 from utils.git_and_reproducibility import repo_root
-from utils.hooks import CalcSimilarityHooks
-from utils.plots import visualize, visualize_rgb
+from utils.plots import visualize_rgb
 from utils.training import (
-    PCA_gpu,
-    get_grad,
     get_grads_dict,
     prepare_answer_mask,
     set_seeds,
     trainable_modules,
-    trainable_params,
 )
 
 # plt dark theme
@@ -59,17 +43,6 @@ model = prepare_model(conf)
 
 # deception_set = load_local("machiavelli/deception/psy-high.jsonl")
 wmdp = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-
-
-def project_out(base, unwanted):
-    # check dimensions
-    _pos, _stream = base.shape
-    (_stream2,) = unwanted.shape
-    assert _stream == _stream2
-
-    unwanted = unwanted / unwanted.norm()
-    magnitudes = (base * unwanted).sum(axis=-1)
-    return pt.einsum("t,s->ts", magnitudes, unwanted)
 
 
 def get_loss(model, beginning_txt, full_txt, loss_fn, only_ans=True):

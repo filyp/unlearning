@@ -60,6 +60,7 @@ def trainable_modules(model):
 
 def get_grad(model, batch, loss_mask=None, loss_fn_name="cross_entropy"):
     # deprecated
+    print("get_grad is deprecated")
     model.zero_grad(set_to_none=True)
     output = model(**batch)
     if loss_mask is not None:
