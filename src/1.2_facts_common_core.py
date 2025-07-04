@@ -198,3 +198,101 @@ print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
 ratios2 = ratios.copy()
 ratios2[:, :, 0] *= 1
 visualize_rgb(ratios2, scale=940)
+
+
+# %%
+
+# %% same, but for many questions
+
+rows = []
+for forget_id in range(6, 24):
+    assert forget_id >= 6, "first six are disr evals"
+    q = wmdp[forget_id]
+
+    # ! get the target grads
+    model.zero_grad(set_to_none=True)
+    for context in q["contexts"][-3:]:
+        beginning_txt = context
+        full_txt = f"{beginning_txt} {q['answer_core']}"
+
+        loss = get_loss(model, beginning_txt, full_txt, loss_fn)
+        loss.backward()
+    target_grads = get_grads_dict(model)
+
+    # ! get control for the with-feature set
+    q = wmdp[forget_id]
+    with_act_means, with_act_pca_components = get_act_principal_components(
+        model,
+        [
+            tokenizer(f"{c} {q['answer_core']}", **conf.tokenizer)
+            for c in q["contexts"][1:-3]
+        ],
+        num_pc=run_conf.num_pc,
+    )
+
+    # % get the forget grads
+    beginning_txt = q["contexts"][0]
+    full_txt = f"{beginning_txt} {q['answer_core']}"
+    batch = tokenizer(full_txt, **conf.tokenizer)
+
+    model.zero_grad(set_to_none=True)
+    loss = get_loss(model, beginning_txt, full_txt, loss_fn)
+    loss.backward()
+    model.zero_grad(set_to_none=True)
+
+
+    per_module_grads = {}
+    for n, module in trainable_modules(model):
+        act_in = get_last_act(module, batch["attention_mask"]).float()
+        grad_out = get_last_grad(module, batch["attention_mask"]).float()
+     
+        # ! CIR
+
+        act_in -= project_out(act_in, without_act_means[n])
+
+        for pc in without_act_pca_components[n]:
+            act_in -= project_out(act_in, pc)
+
+        # # ! common core! (reversed?) anyway, it's terrible
+        # act_in_checkpoint = act_in.clone()
+        # act_in -= project_out(act_in, with_act_means[n])
+        # # for pc in with_act_pca_components[n][:1]:
+        #     # act_in -= project_out(act_in, pc)
+        # act_in = act_in_checkpoint - act_in
+     
+        per_module_grads[n] = pt.einsum("ti,to->oi", act_in, grad_out)
+
+    # % visualize example x layer
+    # green is good transfer, red is bad transfer
+
+    _row = []
+    for n, _ in trainable_modules(model):
+        forget_grad = per_module_grads[n]
+        target_grad = target_grads[n + ".weight"]
+        disr_grad = disr_grads[n + ".weight"]
+
+        good_transfer = (target_grad * forget_grad).sum().item()
+        bad_transfer = (disr_grad * forget_grad).sum().item()
+
+        # _row.append([np.clip(bad_transfer, min=0), good_transfer, 0])  # rgb
+        _row.append([np.abs(bad_transfer), good_transfer, 0])  # rgb
+    
+    rows.append(_row)
+
+# %%
+ratios = np.array(rows)
+
+print("sum of disruption:", ratios[:, :, 0].sum())
+print("sum of forget:", ratios[:, :, 1].sum())
+print("ratio:", ratios[:, :, 0].sum() / ratios[:, :, 1].sum())
+ratios2 = ratios.copy()
+ratios2[:, :, 0] *= 50
+visualize_rgb(ratios2, scale=6600)
+
+# %%
+ratios2[:, :, 0] *= 3
+visualize_rgb(ratios2.mean(axis=0, keepdims=True), scale=2000)
+# %%
+
+visualize_rgb(ratios2.mean(axis=1, keepdims=True), scale=2000)
+# %%

@@ -134,7 +134,7 @@ for beginning_txt, full_txt in deceptive_pairs[15:30]:
 target_grads = get_grads_dict(model)
 
 # %% get the forget grad
-forget_id = 30
+forget_id = 31
 assert forget_id >= 30
 beginning_txt, full_txt = deceptive_pairs[forget_id]
 batch = tokenizer(full_txt, **conf.tokenizer)
@@ -156,8 +156,8 @@ for n, module in trainable_modules(model):
     for pc in act_pca_components[n]:
         act_in -= project_out(act_in, pc)
 
-    # ! common core!
-    act_in = org_act_in - act_in
+    # # ! common core!
+    # act_in = org_act_in - act_in
 
     per_module_grads[n] = pt.einsum("ti,to->oi", act_in, grad_out)
 
@@ -172,8 +172,10 @@ for n, _ in trainable_modules(model):
 
     good_transfer = (target_grad * forget_grad).sum().item()
     bad_transfer = (disr_grad * forget_grad).sum().item()
+    self_similarity = (forget_grad * forget_grad).sum().item()
 
     _row.append([np.clip(bad_transfer, min=0), good_transfer, 0])  # rgb
+    # _row.append([np.clip(bad_transfer, min=0), self_similarity, 0])  # rgb
 
 ratios = np.array(_row).reshape(1, -1, 3)
 
