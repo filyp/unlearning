@@ -116,6 +116,15 @@ with_act_means, with_act_pca_components = get_act_principal_components(
     num_pc=run_conf.num_pc,
 )
 
+# # %%
+# alt_sentence = "The thing most likely modified by ozone is"
+# batch = tokenizer(alt_sentence, **conf.tokenizer)
+# output = model(**batch, output_hidden_states=True)
+# acts_list = dict()
+# for n, module in trainable_modules(model):
+#     acts_list[n] = get_last_act(module, batch["attention_mask"])
+
+
 # %% get the forget grads
 beginning_txt = q["contexts"][0]
 full_txt = f"{beginning_txt} {q['answer_core']}"
@@ -134,10 +143,14 @@ for n, module in trainable_modules(model):
  
     # ! CIR
 
-    act_in -= project_out(act_in, without_act_means[n])
+    # act_in -= project_out(act_in, without_act_means[n])
 
-    for pc in without_act_pca_components[n]:
-        act_in -= project_out(act_in, pc)
+    # for pc in without_act_pca_components[n]:
+    #     act_in -= project_out(act_in, pc)
+    
+    # # ! alt_sentence projection
+    # for proj in acts_list[n]:
+    #     act_in -= project_out(act_in, proj)
 
     # # ! common core! (reversed?) anyway, it's terrible
     # act_in_checkpoint = act_in.clone()
