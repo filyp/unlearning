@@ -87,4 +87,11 @@ def load_fineweb_bio_corpus():
 # %%
 def load_jigsaw_dataset():
     full_path = repo_root() / "data" / "jigsaw" / "train.csv"
+    if not full_path.exists():
+        txt = """\
+You must manually download the Jigsaw dataset from:
+https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/data
+and put the csv files in the data/jigsaw directory.
+        """
+        raise FileNotFoundError(txt)
     return pd.read_csv(full_path)

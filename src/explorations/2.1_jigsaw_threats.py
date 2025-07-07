@@ -1,7 +1,6 @@
 # %%
 # %load_ext autoreload
 # %autoreload 2
-import itertools
 import logging
 import time
 from types import SimpleNamespace
@@ -10,16 +9,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
 import wandb
-from datasets import concatenate_datasets, load_dataset
+from datasets import load_dataset
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from utils import loss_fns
 from utils.common_cir import *
-from utils.data_loading import load_fineweb_bio_corpus, load_jigsaw_dataset, load_local
-from utils.evals import eval_on
+from utils.data_loading import load_jigsaw_dataset
 from utils.git_and_reproducibility import repo_root
-from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
+from utils.training import PCA_gpu, set_seeds, trainable_modules
 
 # plt dark theme
 plt.style.use("dark_background")
@@ -93,10 +91,8 @@ if "model" in globals():
 model = prepare_model(conf, use_every_n_layers=4)
 
 run_conf = SimpleNamespace(
-    # lr=0.001,
-    lr=0.001,
-    # lr=0.003,
-    normalize=False,
+    lr=0.01,
+    normalize=True,
     only_train_on_answer=True,
     # loss_fn_name="neg_cross_entropy",
     loss_fn_name="correct_logit",
@@ -104,8 +100,10 @@ run_conf = SimpleNamespace(
     # techniques=[],
     # techniques=["act", "pca", "control_on_threats"],
     techniques=["act", "pca"],
+    # techniques=["act"],
+    # techniques=["grad"],
     # techniques=["act", "pca", "grad"],
-    clip_at=10,
+    min_grad_norm=1,
 )
 
 # ! first pass through forget corpus, to collect acts and grads
@@ -138,8 +136,10 @@ for n, module in trainable_modules(model):
     grad_means[n] = grads_flattened.mean(axis=0)
     act_means[n] = acts_flattened.mean(axis=0)
     # ! calculate act PCA
-    # could also use the approximate pca_lowrank, but better to play it safe
     act_pca_components[n] = PCA_gpu(acts_flattened, n_components=run_conf.num_pc)
+    # # could also use the approximate pca_lowrank, but better to play it safe
+    # _, S, V = pt.pca_lowrank(acts_flattened, run_conf.num_pc, niter=niter)
+    # act_pca_components[n] = V.T
 
 del model
 pt.cuda.empty_cache()
@@ -147,7 +147,7 @@ model = prepare_model(conf, use_every_n_layers=4)
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.lr)
 
 run_name = (
-    f"{run_conf.loss_fn_name} lr{run_conf.lr} pc{run_conf.num_pc} clip{run_conf.clip_at} "
+    f"{run_conf.loss_fn_name} lr{run_conf.lr} pc{run_conf.num_pc} norm={run_conf.normalize} "
     + " ".join(run_conf.techniques)
 )
 wandb.init(
@@ -172,7 +172,7 @@ for epoch in range(100):
     # ! one epoch
     model.train()
 
-    _norms = []
+    # _norms = []
     for idx in range(64, 256, batch_size):
         texts = jigsaw_threats[idx : idx + batch_size]["comment_text"].tolist()
         batch = tokenizer(texts, **conf.tokenizer)
@@ -181,9 +181,7 @@ for epoch in range(100):
         model.zero_grad(set_to_none=True)
         output = model(**batch, output_hidden_states=True)
         loss_fn = getattr(loss_fns, run_conf.loss_fn_name)
-        loss = loss_fn(
-            output, batch, batch.get("answer_mask", None), clip_at=run_conf.clip_at
-        )
+        loss = loss_fn(output, batch, batch.get("answer_mask", None))
         loss.backward()
 
         # ! here we modify the grad
@@ -230,15 +228,19 @@ for epoch in range(100):
         update_norm = (
             sum(m.weight.grad.norm() ** 2 for _, m in trainable_modules(model)) ** 0.5
         )
-        _norms.append(update_norm.item())
+        # todo just have some cap of allowed grad, over which we normalize?
+        # prevent normalization from multiplying the gradients too much - it's unstable
+        update_norm = max(update_norm, run_conf.min_grad_norm)
+        # print(update_norm)
+        # _norms.append(update_norm.item())
         if run_conf.normalize:
             for n, m in trainable_modules(model):
                 m.weight.grad /= update_norm
 
         optimizer.step()
 
-    # for debug purposes
-    print(f"{np.mean(_norms):7.2f}  ", end="")
+    # # for debug purposes
+    # print(f"{np.mean(_norms):7.2f}  ", end="")
 
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
