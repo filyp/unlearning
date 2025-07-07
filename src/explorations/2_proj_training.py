@@ -177,7 +177,7 @@ for batch in itertools.chain(*control_batches_gens):
     loss.backward()
     for n, module in trainable_modules(model):
         acts_list[n].append(get_last_act(module, batch["attention_mask"]))
-        grads_list[n].append(get_last_act(module, batch["attention_mask"]))
+        grads_list[n].append(get_last_grad(module, batch["attention_mask"]))
 
 # ! calculate projection basis
 grad_means = {}
@@ -248,7 +248,7 @@ for epoch in range(10):
 
         # ! here we modify the grad
         for n, m in trainable_modules(model):
-            grads = get_last_act(m, batch["attention_mask"])
+            grads = get_last_grad(m, batch["attention_mask"])
             acts = get_last_act(m, batch["attention_mask"])
             assert len(acts.shape) == len(grads.shape) == 2
 

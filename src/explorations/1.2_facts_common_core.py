@@ -116,13 +116,13 @@ with_act_means, with_act_pca_components = get_act_principal_components(
     num_pc=run_conf.num_pc,
 )
 
-# # %%
-# alt_sentence = "The thing most likely modified by ozone is"
-# batch = tokenizer(alt_sentence, **conf.tokenizer)
-# output = model(**batch, output_hidden_states=True)
-# acts_list = dict()
-# for n, module in trainable_modules(model):
-#     acts_list[n] = get_last_act(module, batch["attention_mask"])
+# %%
+alt_sentence = "The thing most likely modified by ozone is"
+batch = tokenizer(alt_sentence, **conf.tokenizer)
+output = model(**batch, output_hidden_states=True)
+acts_list = dict()
+for n, module in trainable_modules(model):
+    acts_list[n] = get_last_act(module, batch["attention_mask"])
 
 
 # %% get the forget grads
@@ -143,21 +143,23 @@ for n, module in trainable_modules(model):
  
     # ! CIR
 
-    # act_in -= project_out(act_in, without_act_means[n])
+    act_in -= project_out(act_in, without_act_means[n])
 
-    # for pc in without_act_pca_components[n]:
-    #     act_in -= project_out(act_in, pc)
+    for pc in without_act_pca_components[n]:
+        act_in -= project_out(act_in, pc)
     
     # # ! alt_sentence projection
+    # # somehow it makes stuff worse, if combined with the best CIR version (above)
     # for proj in acts_list[n]:
     #     act_in -= project_out(act_in, proj)
 
     # # ! common core! (reversed?) anyway, it's terrible
+    # # reversed is worse than straight, which means projecting common things is in general so good
     # act_in_checkpoint = act_in.clone()
     # act_in -= project_out(act_in, with_act_means[n])
-    # # for pc in with_act_pca_components[n][:1]:
-    #     # act_in -= project_out(act_in, pc)
-    # act_in = act_in_checkpoint - act_in
+    # for pc in with_act_pca_components[n][:1]:
+    #     act_in -= project_out(act_in, pc)
+    # # act_in = act_in_checkpoint - act_in
  
     per_module_grads[n] = pt.einsum("ti,to->oi", act_in, grad_out)
 
@@ -282,3 +284,7 @@ visualize_rgb(ratios2.mean(axis=0, keepdims=True), scale=2000)
 
 visualize_rgb(ratios2.mean(axis=1, keepdims=True), scale=2000)
 # %%
+
+# %%
+from datasets import load_dataset
+dataset = load_dataset("jigsaw_toxicity_pred", data_dir="/data/kebl6672/dpo-toxic-general/data/jigsaw-toxic-comment-classification-challenge")

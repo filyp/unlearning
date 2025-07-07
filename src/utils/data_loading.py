@@ -1,4 +1,5 @@
 # %%
+import pandas as pd
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
@@ -81,3 +82,9 @@ def load_fineweb_bio_corpus():
 #     }
 #     # filter out the ones in the categories_to_reject
 #     return [ex for ex in mmlu_dataset if ex["subject"] not in categories_to_reject]
+
+
+# %%
+def load_jigsaw_dataset():
+    full_path = repo_root() / "data" / "jigsaw" / "train.csv"
+    return pd.read_csv(full_path)
