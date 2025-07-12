@@ -8,6 +8,7 @@ import torch as pt
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from utils.git_and_reproducibility import repo_root
 from utils.training import get_grad, prepare_answer_mask, set_seeds
 
 # plt dark theme
@@ -16,7 +17,7 @@ plt.style.use("dark_background")
 logging.basicConfig(level=logging.INFO)
 pt.set_default_device("cuda")
 
-conf = OmegaConf.load("../configs/transferability.yaml")
+conf = OmegaConf.load(repo_root() / "configs/transferability.yaml")
 # conf.model_id = "meta-llama/Llama-3.2-3B"
 conf.model_id = "meta-llama/Llama-3.2-1B"
 # ! setup
