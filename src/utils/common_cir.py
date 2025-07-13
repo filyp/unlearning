@@ -18,13 +18,11 @@ def project_out(base, unwanted):
 
 
 def save_act_hook(module, args):
-    # ignore BOS token and the last token
-    module.last_act_full = args[0].detach().clone()[:, 1:-1]
+    module.last_act_full = args[0].detach().clone()
 
 
 def save_grad_hook(module, args):
-    # ignore BOS token and the last token
-    module.last_grad_full = args[0].detach().clone()[:, 1:-1]
+    module.last_grad_full = args[0].detach().clone()
 
 
 def prepare_model(conf, use_every_n_layers=None):
@@ -58,13 +56,17 @@ def prepare_model(conf, use_every_n_layers=None):
 
 
 def get_last_act(module, attn_mask):
+    # ignore BOS token and the last token
+    act = module.last_act_full[:, 1:-1]
     final_mask = attn_mask.bool()[:, 1:-1]
-    return module.last_act_full[final_mask]
+    return act[final_mask]
 
 
 def get_last_grad(module, attn_mask):
+    # ignore BOS token and the last token
+    grad = module.last_grad_full[:, 1:-1]
     final_mask = attn_mask.bool()[:, 1:-1]
-    return module.last_grad_full[final_mask]
+    return grad[final_mask]
 
 
 # but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it

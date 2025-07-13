@@ -18,6 +18,7 @@ from utils import loss_fns
 from utils.data_loading import load_fineweb_bio_corpus, load_local
 from utils.evals import eval_on
 from utils.common_cir import *
+from utils.plots import print_colored_tokens
 from utils.training import PCA_gpu, prepare_answer_mask, set_seeds, trainable_modules
 from utils.git_and_reproducibility import repo_root
 
@@ -318,7 +319,7 @@ max_loss_diff = max([loss_diffs.abs().max() for _, loss_diffs in batch_and_loss_
 print(f"{max_loss_diff=}")
 for batch, loss_diffs in batch_and_loss_diffs:
     loss_diffs /= max_loss_diff
-    loss_fns.print_colored_tokens(loss_diffs, batch, tokenizer)
+    print_colored_tokens(loss_diffs, batch, tokenizer)
 del batch_and_loss_diffs, max_loss_diff
 
 # for q in wmdp_joined:

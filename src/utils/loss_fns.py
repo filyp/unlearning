@@ -1,7 +1,6 @@
 import gc
 
 import torch as pt
-from IPython.display import HTML, display
 
 # new_logits = []
 # new_target_probs = []
@@ -122,6 +121,7 @@ def cross_entropy_per_token(output, batch):
 
 # adapted from https://github.com/rishub-tamirisa/tamper-resistance/blob/41b749ca4d9bcb7608c7ead2ca48b0508714af99/modules/objectives.py#L114
 def neg_entropy(output, batch) -> pt.Tensor:
+    # todo implement answer mask
     """
     Compute the negative mean entropy loss for the given logits.
 
@@ -138,25 +138,6 @@ def neg_entropy(output, batch) -> pt.Tensor:
     neg_entropy = -pt.sum(-softmax * log_softmax, dim=-1)
     neg_entropy *= batch["attention_mask"]
     return neg_entropy.sum() / batch["attention_mask"].sum()
-
-
-def print_colored_tokens(vals, batch, tokenizer):
-    assert vals.abs().max() <= 1
-
-    html_tokens = []
-    for val, token in zip(vals, batch["input_ids"][0][1:]):
-        token_str = tokenizer.decode([token])
-        opacity = val.abs().item()
-        # Escape HTML special characters in token_str if needed
-        token_str = (
-            token_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        )
-        color = "255,0,0" if val > 0 else "0,255,0"
-        html_tokens.append(
-            f'<span style="background-color: rgba({color},{opacity:.2f});">{token_str}</span>'
-        )
-
-    display(HTML("".join(html_tokens)))
 
 
 # def circuit_breaker_forget(

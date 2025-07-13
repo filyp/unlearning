@@ -1,9 +1,32 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
+from IPython.display import HTML, display
+
+
+def print_colored_tokens(vals, batch, tokenizer):
+    assert vals.abs().max() <= 1
+
+    html_tokens = []
+    for val, token in zip(vals, batch["input_ids"][0][1:]):
+        token_str = tokenizer.decode([token])
+        opacity = val.abs().item()
+        # Escape HTML special characters in token_str if needed
+        token_str = (
+            token_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+        color = "255,0,0" if val > 0 else "0,255,0"
+        html_tokens.append(
+            f'<span style="background-color: rgba({color},{opacity:.2f});">{token_str}</span>'
+        )
+
+    display(HTML("".join(html_tokens)))
 
 
 def visualize_rgb(values, shape_lim=60, scale=None):
+    """
+    Visualize a 3D tensor as an RGB image.
+    """
     assert len(values.shape) == 3
 
     if isinstance(values, pt.Tensor):
@@ -23,6 +46,11 @@ def visualize_rgb(values, shape_lim=60, scale=None):
 
 
 def visualize(values, shape_lim=60, scale=None):
+    """
+    Visualize a 2D tensor as an RGB image.
+
+    Positive values are green, negative values are red, and 0 is black.
+    """
     if isinstance(values, pt.Tensor):
         values = values.cpu().float().numpy()
     # elif isinstance(values, list):

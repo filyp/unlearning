@@ -59,21 +59,14 @@ def trainable_modules(model):
 
 
 def get_grad(model, batch, loss_mask=None, loss_fn_name="cross_entropy"):
-    # deprecated
-    print("get_grad is deprecated")
     model.zero_grad(set_to_none=True)
     output = model(**batch)
-    if loss_mask is not None:
-        # moving this before model inference may break the inference, so keep it here
-        batch["attention_mask"] *= loss_mask
     loss_fn = getattr(loss_fns, loss_fn_name)
-    loss = loss_fn(output, batch)
+    loss = loss_fn(output, batch, loss_mask)
     loss.backward()
-    grad = TensorDict(
-        {n: p.grad for n, p in model.named_parameters() if p.requires_grad},
-    )
+    gd = TensorDict({n: p.grad for n, p in model.named_parameters() if p.requires_grad})
     model.zero_grad(set_to_none=True)
-    return grad
+    return gd
 
 
 def prepare_answer_mask(beginning_batch, full_batch):
@@ -83,13 +76,6 @@ def prepare_answer_mask(beginning_batch, full_batch):
     short_attn_padded = F.pad(short_attn, (0, pad_amount), value=0)
     answer_mask = (long_attn != short_attn_padded).to(pt.int64)
     return answer_mask
-
-
-# def get_grad_from_pair(model, tokenizer, conf, beginning, ending):
-#     beginning_batch = tokenizer(beginning, **conf.tokenizer)
-#     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-#     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-#     return get_grad(model, full_batch, loss_mask)
 
 
 def PCA_gpu(v, n_components=10, center=True):
