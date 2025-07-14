@@ -21,6 +21,7 @@ from utils.training import get_grad, prepare_answer_mask, set_seeds
 # plt.style.use("dark_background")
 plt.style.use("default")
 plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["font.size"] = 10
 
 logging.basicConfig(level=logging.INFO)
 pt.set_default_device("cuda")
@@ -151,7 +152,7 @@ def create_activation_visualization(act_tensor, max_vals=60):
 
 
 def create_plot(infos):
-    text_y_pos = 0.5
+    text_y_pos = 0.4
     """Create the main visualization plot"""
     n_rows = len(infos)
 
@@ -160,7 +161,8 @@ def create_plot(infos):
     group2 = infos[-5:]
 
     # Create figure with custom gridspec for the two groups
-    fig = plt.figure(figsize=(5, n_rows * 0.2 + 0.2))  # Extra height for spacing
+    # ICLR template is 5.5 inches wide
+    fig = plt.figure(figsize=(5.5, n_rows * 0.2 + 0.2))  # Extra height for spacing
 
     # Calculate height ratios: rows for group1, spacing, rows for group2
     height_ratios = [1] * len(group1) + [0.5] + [1] * len(group2)  # 0.5 for white gap
@@ -217,7 +219,6 @@ def create_plot(infos):
             0.01,
             text_y_pos,
             beginning,
-            fontsize=9,
             va="center",
             ha="left",
             color="black",
@@ -228,7 +229,6 @@ def create_plot(infos):
             0.99,
             text_y_pos,
             ending,
-            fontsize=9,
             va="center",
             ha="right",
             color="purple",
@@ -263,7 +263,6 @@ def create_plot(infos):
             0.5,
             text_y_pos,
             f"{percentage}%",
-            fontsize=9,
             va="center",
             ha="center",
             color="black",
