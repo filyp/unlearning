@@ -53,80 +53,167 @@ def tensor_dict_cossim(a, b):
     b_norm = tensor_dict_dot_product(b, b).sqrt()
     return a_dot_b / (a_norm * b_norm)
 
+    # ("The French anthem is", "La Marseillaise"),
+    # ("The city of love is", "Paris"),
+    # ("The Eiffel Tower is in", "Paris"),
+    # ("The Statue of Liberty is in", "New York"),
+    # # ("The biggest city in France is", "Paris"),
+    # ("The Brandenburg Gate is in", "Berlin"),
+    # ("The hardest metal is", "Tungsten"),
 
-# %%
-beginning, ending = "The capital of France is", "Paris"
-# beginning, ending = "The capital of Italy is", "Paris"
-# beginning, ending = "The capital of Gondor is", "Minas Tirith"
-
-beginning_batch = tokenizer(beginning, **conf.tokenizer)
-full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
-loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-ref_grad = get_grad(model, full_batch, loss_mask, "cross_entropy")
-
-infos = []
-for beginning, ending in [
-    ("The capital of France is", "Paris"),
-    # ("The capital of Germany is", "Berlin"),
-    # ("The capital of England is", "London"),
-    ("The capital of Spain is", "Madrid"),
-    ("The capital of China is", "Beijing"),
-    # ("The capital of Italy is", "Rome"),
-    ("The capital of Poland is", "Warsaw"),
-    ("The capital of Ukraine is", "Kyiv"),
-    ("The capital of Japan is", "Tokio"),
-    ("The capital of Skyrim is", "Solitude"),
-    ("The capital of Rohan is", "Edoras"),
     # ("The capital of the Underworld is", "Hades"),
     # ("The capital of Italy is", "Paris"),
     # ("The capital of USA is", "Paris"),
     # ("The capital of Italy is", "Warsaw"),
     # ("The capital of USA is", "Warsaw"),
-    # ("Die Hauptstadt von Frankreich ist", "Paris"),
-    # ("La capital de Francia es", "París"),
-    # ("Столица Франции", "Париж"),
-    # ("Stolica Francji to", "Paryż"),
-    # ("A capital de França é", "Paris"),
-    ("The French anthem is", "La Marseillaise"),
-    ("The city of love is", "Paris"),
-    ("The Eiffel Tower is in", "Paris"),
-    ("The Statue of Liberty is in", "New York"),
-    # ("The biggest city in France is", "Paris"),
-    # ("The Brandenburg Gate is in", "Berlin"),
-    ("The hardest metal is", "Tungsten"),
+
     # ("Water is", "wet"),
     # ("The term for self-fertilization is", "autogamy"),
     # ("The term for the death of cells is", "apoptosis"),
     # ("The symbol of helium is", "He"),
-    # ("The oldest building in the world is", "The Great Pyramid of Giza"),
     # ("The languages of Canada are", "English and French"),
-]:
+
+    # ("The Eternal City is", "Rome"),
+    # ("The Burj Khalifa is in", "Dubai"),
+    # ("The largest city in the USA is", "New York"),
+    # ("The largest city in India is", "Mumbai"),
+    # ("The largest city in Japan is", "Tokyo"),
+    # ("The largest city in Turkey is", "Istanbul"),
+    # ("The City of Angels is", "Los Angeles"),
+    # ("The Venice of the North is", "Stockholm"),
+    # ("The White City is", "Tel Aviv"),
+    # ("The Mile High City is", "Denver"),
+
+    # ("The capital of Germany is", "Berlin"),
+    # ("The capital of England is", "London"),
+    # ("The capital of Italy is", "Rome"),
+
+
+# %%
+beginning_ending_pairs_groups1 = [
+    [
+        ("The capital of France is", "Paris"),
+    ],
+    [
+        ("The capital of Spain is", "Madrid"),
+        ("The capital of China is", "Beijing"),
+        # ("The capital of Poland is", "Warsaw"),
+        ("The capital of Ukraine is", "Kyiv"),
+        # ("The capital of Japan is", "Tokio"),
+        ("The capital of Skyrim is", "Solitude"),
+        ("The capital of Rohan is", "Edoras"),
+    ],
+    [
+        ("The capital of France is", "Madrid"),
+        ("The capital of Spain is", "Beijing"),
+        ("The capital of China is", "Kyiv"),
+        ("The capital of Ukraine is", "Paris"),
+    ],
+    [
+        ("The largest continent is", "Asia"),
+        ("The largest planet is", "Jupiter"),
+        ("The author of 1984 is", "George Orwell"),
+        ("The chemical symbol for gold is", "Au"),
+    ],
+]
+beginning_ending_pairs_groups2 = [
+    [
+        ("Die Hauptstadt von Frankreich ist", "Paris"),
+        ("La capital de Francia es", "París"),
+        # ("Die Hauptstadt von Japan ist", "Tokio"),
+        ("Столица Франции", "Париж"),
+        # ("Stolica Francji to", "Paryż"),
+        ("A capital de França é", "Paris"),
+    ],
+    [
+        # Using "was" - shorter versions
+        ("Napoleon was", "French"),
+        ("Caesar was", "Roman"),
+        ("Einstein was", "German"),
+        ("Mozart was", "Austrian"),
+    ],
+    [
+        # Using "contains"
+        ("Water contains", "hydrogen"),
+        ("Salt contains", "sodium"),
+        ("Diamond contains", "carbon"),
+        ("Air contains", "oxygen"),
+    ],
+    [
+        # Using "invented"
+        ("Marie Curie discovered", "radium"),
+        ("Prometheus stole", "fire"),
+        ("Atlas holds", "the world"),
+        ("Thomas Edison invented", "the light bulb"),
+    ],
+    # [
+    #     # Using "created"
+    #     ("Mark Zuckerberg created", "Facebook"),
+    #     ("Bill Gates created", "Microsoft"),
+    #     ("Steve Jobs created", "Apple"),
+    #     ("Guido van Rossum created", "Python"),
+    # ],
+    # [
+    #     # Using "flows through"
+    #     ("The Seine flows through", "Paris"),
+    #     ("The Thames flows through", "London"),
+    #     ("The Nile flows through", "Egypt"),
+    #     ("The Amazon flows through", "Brazil"),
+    # ],
+    # [
+    #     # Using "borders"
+    #     ("Mexico borders", "the United States"),
+    #     ("Canada borders", "Alaska"),
+    #     ("Germany borders", "Poland"),
+    #     ("France borders", "Spain"),
+    # ],
+]
+
+
+def get_infos(beginning_ending_pairs):
+    loss_fn_name = "cross_entropy"
+    # loss_fn_name = "correct_logit"
+    # * refecence prompt
+    beginning, ending = "The capital of France is", "Paris"
+    # beginning, ending = "The capital of Italy is", "Paris"
+    # beginning, ending = "The capital of Gondor is", "Minas Tirith"
+
     beginning_batch = tokenizer(beginning, **conf.tokenizer)
     full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
     loss_mask = prepare_answer_mask(beginning_batch, full_batch)
-    grad = get_grad(model, full_batch, loss_mask, "cross_entropy")
+    ref_grad = get_grad(model, full_batch, loss_mask, loss_fn_name)
 
-    cossim = tensor_dict_cossim(grad, ref_grad)
+    infos = []
+    for beginning, ending in beginning_ending_pairs:
+        beginning_batch = tokenizer(beginning, **conf.tokenizer)
+        full_batch = tokenizer(f"{beginning} {ending}", **conf.tokenizer)
+        loss_mask = prepare_answer_mask(beginning_batch, full_batch)
+        grad = get_grad(model, full_batch, loss_mask, loss_fn_name)
 
-    module = model.model.layers[8].mlp.gate_proj
-    pre_answer_pos = beginning_batch["input_ids"].shape[1] - 1
-    pre_answer_act = module.last_act_full[0, pre_answer_pos]
+        cossim = tensor_dict_cossim(grad, ref_grad)
 
-    infos.append(
-        dict(
-            beginning=beginning,
-            ending=ending,
-            cossim=cossim,
-            act=pre_answer_act,
+        module = model.model.layers[8].mlp.gate_proj
+        pre_answer_pos = beginning_batch["input_ids"].shape[1] - 1
+        pre_answer_act = module.last_act_full[0, pre_answer_pos]
+        pre_answer_grad = module.last_grad_full[0, pre_answer_pos]
+
+        infos.append(
+            dict(
+                beginning=beginning,
+                ending=ending,
+                cossim=cossim,
+                act=pre_answer_act,
+                grad=pre_answer_grad,
+            )
         )
-    )
+    return infos
+
 
 # acts = pt.stack([info["act"] for info in infos])
 # visualize(acts)
 
 
-# %%
-def create_activation_visualization(act_tensor, max_vals=60):
+def create_activation_visualization(act_tensor, max_vals):
     """Create visualization for activation values"""
     if isinstance(act_tensor, pt.Tensor):
         act_values = act_tensor.cpu().float().numpy()
@@ -151,29 +238,219 @@ def create_activation_visualization(act_tensor, max_vals=60):
     return rgb_image
 
 
-def create_plot(infos):
+# def create_plot(group_infos, slice_type):
+#     text_y_pos = 0.4
+#     """Create the main visualization plot"""
+
+#     # Calculate total rows and create height ratios
+#     total_rows = sum(len(group) for group in group_infos)
+#     num_gaps = len(group_infos) - 1  # gaps between groups
+
+#     # Build height ratios: group rows + gaps between groups
+#     height_ratios = []
+#     for i, group in enumerate(group_infos):
+#         height_ratios.extend([1] * len(group))  # rows for this group
+#         if i < len(group_infos) - 1:  # not the last group
+#             height_ratios.append(0.5)  # gap after this group
+
+#     # Create figure with custom gridspec for all groups
+#     # ICLR template is 5.5 inches wide
+#     fig = plt.figure(figsize=(5.5, total_rows * 0.2 + 0.2))  # Extra height for spacing
+
+#     gs = gridspec.GridSpec(
+#         total_rows + num_gaps,  # total rows + gaps
+#         3,
+#         width_ratios=[0.45, 0.1, 0.45],
+#         height_ratios=height_ratios,
+#         hspace=-0.01,  # No vertical spacing between rows
+#         wspace=0.15,  # Minimal horizontal spacing
+#         left=0.0,  # Remove left margin
+#         right=1.0,  # Remove right margin
+#         top=0.92,
+#         bottom=0.02,
+#     )
+
+#     # Create activation visualizations for each group
+#     def create_group_activation_image(group_infos):
+#         """Stack activation visualizations for a group vertically"""
+#         group_acts = []
+#         for info in reversed(group_infos):
+#             act_vis = create_activation_visualization(info[slice_type])
+#             # Remove the first dimension (1, 60, 3) -> (60, 3)
+#             group_acts.append(act_vis[0])
+
+#         # Stack vertically to create (n_rows, 60, 3)
+#         return np.stack(group_acts, axis=0)
+
+#     # Create activation images for all groups
+#     group_activation_images = []
+#     for group in group_infos:
+#         group_activation_images.append(create_group_activation_image(group))
+
+#     # Build mapping from info index to grid row
+#     all_infos = []
+#     row_indices = []
+#     current_row = 0
+
+#     for group_idx, group in enumerate(group_infos):
+#         for info in group:
+#             all_infos.append(info)
+#             row_indices.append(current_row)
+#             current_row += 1
+
+#         # Add gap after each group except the last
+#         if group_idx < len(group_infos) - 1:
+#             current_row += 1  # skip gap row
+
+#     # Process all infos with their corresponding row indices
+#     for i, info in enumerate(all_infos):
+#         actual_row = row_indices[i]
+
+#         # Column 1: Text with purple ending
+#         ax1 = fig.add_subplot(gs[actual_row, 0])
+#         ax1.set_xlim(0, 1)
+#         ax1.set_ylim(0, 1)
+#         ax1.axis("off")
+
+#         # Split text and color the ending purple
+#         beginning = info["beginning"]
+#         ending = info["ending"]
+
+#         # Display beginning text in black
+#         ax1.text(
+#             0.01,
+#             text_y_pos,
+#             beginning,
+#             va="center",
+#             ha="left",
+#             color="black",
+#         )
+
+#         # Display ending text in purple
+#         ax1.text(
+#             0.99,
+#             text_y_pos,
+#             ending,
+#             va="center",
+#             ha="right",
+#             color="purple",
+#             # weight="bold",
+#         )
+
+#         # Column 2: Cosine similarity with colored background
+#         ax2 = fig.add_subplot(gs[actual_row, 1])
+#         ax2.set_xlim(0, 1)
+#         ax2.set_ylim(0, 1)
+#         ax2.axis("off")
+
+#         # Convert cosine similarity to percentage
+#         cossim_val = info["cossim"]
+#         percentage = int(cossim_val * 100)
+
+#         # Create colored background: white (1,1,1) to red (1,0,0)
+#         # Interpolate based on absolute cosine similarity value
+#         assert cossim_val <= 1.001, cossim_val  # allow some numerical errors
+#         clipped_cossim = cossim_val.clamp(0, 1).item()
+#         bg_color = (
+#             1.0,
+#             1.0 - clipped_cossim,
+#             1.0 - clipped_cossim,
+#         )  # From white to red
+
+#         # Create background rectangle
+#         rect = patches.Rectangle((0, 0), 1, 1, linewidth=0, facecolor=bg_color)
+#         ax2.add_patch(rect)
+
+#         # Add percentage text - always black
+#         ax2.text(
+#             0.5,
+#             text_y_pos,
+#             f"{percentage}%",
+#             va="center",
+#             ha="center",
+#             color="black",
+#             # weight="bold",
+#         )
+
+#     # Create imshow for each group's activations
+#     current_row = 0
+#     for group_idx, group in enumerate(group_infos):
+#         group_size = len(group)
+
+#         # Create subplot for this group's activations
+#         ax3_group = fig.add_subplot(gs[current_row : current_row + group_size, 2])
+#         ax3_group.imshow(
+#             group_activation_images[group_idx],
+#             aspect="auto",
+#             extent=[0, 60, group_size, 0],
+#         )
+#         ax3_group.set_xlim(0, 60)
+#         ax3_group.set_ylim(0, group_size)
+#         ax3_group.set_xticks([])
+#         ax3_group.set_yticks([])
+#         for spine in ax3_group.spines.values():
+#             spine.set_visible(False)
+
+#         current_row += group_size
+
+#         # Add white spacing row if not the last group
+#         if group_idx < len(group_infos) - 1:
+#             spacing_ax = fig.add_subplot(gs[current_row, :])
+#             spacing_ax.axis("off")
+#             spacing_ax.set_facecolor("white")
+#             current_row += 1
+
+#     # Set column titles with proper positioning
+#     if total_rows > 0:
+#         # Calculate proper x positions based on the new gridspec
+#         fig.text(
+#             0.2,
+#             0.97,
+#             "Prompt",
+#             fontsize=12,
+#             ha="center",
+#             # weight="bold",
+#         )
+#         fig.text(
+#             0.5,
+#             0.97,
+#             "Update Cossim",
+#             fontsize=12,
+#             ha="center",
+#             # weight="bold",
+#         )
+#         if slice_type == "act":
+#             fig.text(0.8, 0.97, "Activations Slice", fontsize=12, ha="center")
+#         else:
+#             fig.text(0.8, 0.97, "Gradients Slice", fontsize=12, ha="center")
+
+
+def create_plot(group_infos):
     text_y_pos = 0.4
-    """Create the main visualization plot"""
-    n_rows = len(infos)
+    """Create the main visualization plot with both activations and gradients"""
 
-    # Split into two groups: first 11 and remaining 4
-    group1 = infos[:-5]
-    group2 = infos[-5:]
+    # Calculate total rows and create height ratios
+    total_rows = sum(len(group) for group in group_infos)
+    num_gaps = len(group_infos) - 1  # gaps between groups
 
-    # Create figure with custom gridspec for the two groups
+    # Build height ratios: group rows + gaps between groups
+    height_ratios = []
+    for i, group in enumerate(group_infos):
+        height_ratios.extend([1] * len(group))  # rows for this group
+        if i < len(group_infos) - 1:  # not the last group
+            height_ratios.append(0.35)  # gap after this group
+
+    # Create figure with custom gridspec for all groups
     # ICLR template is 5.5 inches wide
-    fig = plt.figure(figsize=(5.5, n_rows * 0.2 + 0.2))  # Extra height for spacing
-
-    # Calculate height ratios: rows for group1, spacing, rows for group2
-    height_ratios = [1] * len(group1) + [0.5] + [1] * len(group2)  # 0.5 for white gap
+    fig = plt.figure(figsize=(5.5, total_rows * 0.2 + 0.0))  # Extra height for spacing
 
     gs = gridspec.GridSpec(
-        len(group1) + 1 + len(group2),  # +1 for spacing row
-        3,
-        width_ratios=[0.45, 0.1, 0.45],
+        total_rows + num_gaps,  # total rows + gaps
+        4,  # Changed to 4 columns
+        width_ratios=[0.45, 0.1, 0.225, 0.225],
         height_ratios=height_ratios,
         hspace=-0.01,  # No vertical spacing between rows
-        wspace=0.15,  # Minimal horizontal spacing
+        wspace=0.07,  # Minimal horizontal spacing
         left=0.0,  # Remove left margin
         right=1.0,  # Remove right margin
         top=0.92,
@@ -181,26 +458,40 @@ def create_plot(infos):
     )
 
     # Create activation visualizations for each group
-    def create_group_activation_image(group_infos):
-        """Stack activation visualizations for a group vertically"""
-        group_acts = []
-        for info in group_infos:
-            act_vis = create_activation_visualization(info["act"])
+    def create_group_slice_image(group_infos, slice_type):
+        """Stack slice visualizations for a group vertically"""
+        group_slices = []
+        for info in reversed(group_infos):
+            slice_vis = create_activation_visualization(info[slice_type], max_vals=35)
             # Remove the first dimension (1, 60, 3) -> (60, 3)
-            group_acts.append(act_vis[0])
+            group_slices.append(slice_vis[0])
 
         # Stack vertically to create (n_rows, 60, 3)
-        return np.stack(group_acts, axis=0)
+        return np.stack(group_slices, axis=0)
 
-    group1_acts = create_group_activation_image(group1)
-    group2_acts = create_group_activation_image(group2)
+    # Create activation and gradient images for all groups
+    group_activation_images = []
+    group_gradient_images = []
+    for group in group_infos:
+        group_activation_images.append(create_group_slice_image(group, "act"))
+        group_gradient_images.append(create_group_slice_image(group, "grad"))
 
-    # Process both groups
-    all_infos = group1 + group2
-    row_indices = list(range(len(group1))) + list(
-        range(len(group1) + 1, len(group1) + 1 + len(group2))
-    )
+    # Build mapping from info index to grid row
+    all_infos = []
+    row_indices = []
+    current_row = 0
 
+    for group_idx, group in enumerate(group_infos):
+        for info in group:
+            all_infos.append(info)
+            row_indices.append(current_row)
+            current_row += 1
+
+        # Add gap after each group except the last
+        if group_idx < len(group_infos) - 1:
+            current_row += 1  # skip gap row
+
+    # Process all infos with their corresponding row indices
     for i, info in enumerate(all_infos):
         actual_row = row_indices[i]
 
@@ -242,17 +533,18 @@ def create_plot(infos):
         ax2.axis("off")
 
         # Convert cosine similarity to percentage
-        cossim_val = (
-            info["cossim"].item()
-            if isinstance(info["cossim"], pt.Tensor)
-            else info["cossim"]
-        )
+        cossim_val = info["cossim"]
         percentage = int(cossim_val * 100)
 
         # Create colored background: white (1,1,1) to red (1,0,0)
         # Interpolate based on absolute cosine similarity value
-        abs_cossim = abs(cossim_val)
-        bg_color = (1.0, 1.0 - abs_cossim, 1.0 - abs_cossim)  # From white to red
+        assert cossim_val <= 1.001, cossim_val  # allow some numerical errors
+        clipped_cossim = cossim_val.clamp(0, 1).item()
+        bg_color = (
+            1.0,
+            1.0 - clipped_cossim,
+            1.0 - clipped_cossim,
+        )  # From white to red
 
         # Create background rectangle
         rect = patches.Rectangle((0, 0), 1, 1, linewidth=0, facecolor=bg_color)
@@ -269,56 +561,93 @@ def create_plot(infos):
             # weight="bold",
         )
 
-    # Create single imshow for group1 activations
-    ax3_group1 = fig.add_subplot(gs[: len(group1), 2])
-    ax3_group1.imshow(group1_acts, aspect="auto", extent=[0, 60, len(group1), 0])
-    ax3_group1.set_xlim(0, 60)
-    ax3_group1.set_ylim(0, len(group1))
-    ax3_group1.set_xticks([])
-    ax3_group1.set_yticks([])
-    for spine in ax3_group1.spines.values():
-        spine.set_visible(False)
+    # Create imshow for each group's activations and gradients
+    current_row = 0
+    for group_idx, group in enumerate(group_infos):
+        group_size = len(group)
 
-    # Create single imshow for group2 activations
-    ax3_group2 = fig.add_subplot(gs[len(group1) + 1 :, 2])
-    ax3_group2.imshow(group2_acts, aspect="auto", extent=[0, 60, len(group2), 0])
-    ax3_group2.set_xlim(0, 60)
-    ax3_group2.set_ylim(0, len(group2))
-    ax3_group2.set_xticks([])
-    ax3_group2.set_yticks([])
-    for spine in ax3_group2.spines.values():
-        spine.set_visible(False)
+        # Column 3: Activations
+        ax3_group = fig.add_subplot(gs[current_row : current_row + group_size, 2])
+        ax3_group.imshow(
+            group_activation_images[group_idx],
+            aspect="auto",
+            extent=[0, 60, group_size, 0],
+        )
+        ax3_group.set_xlim(0, 60)
+        ax3_group.set_ylim(0, group_size)
+        ax3_group.set_xticks([])
+        ax3_group.set_yticks([])
+        for spine in ax3_group.spines.values():
+            spine.set_visible(False)
 
-    # Add white spacing row (it will be empty by default)
-    spacing_ax = fig.add_subplot(gs[len(group1), :])
-    spacing_ax.axis("off")
-    spacing_ax.set_facecolor("white")
+        # Column 4: Gradients
+        ax4_group = fig.add_subplot(gs[current_row : current_row + group_size, 3])
+        ax4_group.imshow(
+            group_gradient_images[group_idx],
+            aspect="auto",
+            extent=[0, 60, group_size, 0],
+        )
+        ax4_group.set_xlim(0, 60)
+        ax4_group.set_ylim(0, group_size)
+        ax4_group.set_xticks([])
+        ax4_group.set_yticks([])
+        for spine in ax4_group.spines.values():
+            spine.set_visible(False)
+
+        current_row += group_size
+
+        # Add white spacing row if not the last group
+        if group_idx < len(group_infos) - 1:
+            spacing_ax = fig.add_subplot(gs[current_row, :])
+            spacing_ax.axis("off")
+            spacing_ax.set_facecolor("white")
+            current_row += 1
 
     # Set column titles with proper positioning
-    if n_rows > 0:
+    if total_rows > 0:
         # Calculate proper x positions based on the new gridspec
+        caption_y_pos = 0.94
         fig.text(
             0.2,
-            0.97,
+            caption_y_pos,
             "Prompt",
             fontsize=12,
             ha="center",
             # weight="bold",
         )
         fig.text(
-            0.5,
-            0.97,
-            "Grad Cossim",
+            0.49,
+            caption_y_pos,
+            "Disruption",
             fontsize=12,
             ha="center",
             # weight="bold",
         )
-        fig.text(0.8, 0.97, "Activations Slice", fontsize=12, ha="center")
+        fig.text(0.662, caption_y_pos, "Activations", fontsize=12, ha="center")
+        fig.text(0.892, caption_y_pos, "Gradients", fontsize=12, ha="center")
 
 
-create_plot(infos)
+# %%
+group_infos = []
+for group in beginning_ending_pairs_groups1:
+    group_infos.append(get_infos(group))
+
+create_plot(group_infos)
 
 # save
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}.pdf"
 plt.savefig(plot_path, bbox_inches="tight", dpi=300)
+
+# %%
+group_infos = []
+for group in beginning_ending_pairs_groups1[:2] + beginning_ending_pairs_groups2:
+    group_infos.append(get_infos(group))
+
+create_plot(group_infos)
+
+# save
+stem = Path(__file__).stem
+plot_path = repo_root() / f"paper/plots/{stem}_2.pdf"
+plt.savefig(plot_path, bbox_inches="tight", dpi=300)
+
