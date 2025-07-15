@@ -100,8 +100,6 @@ beginning_ending_pairs_groups1 = [
         # ("The capital of Poland is", "Warsaw"),
         ("The capital of Ukraine is", "Kyiv"),
         # ("The capital of Japan is", "Tokio"),
-        ("The capital of Skyrim is", "Solitude"),
-        ("The capital of Rohan is", "Edoras"),
     ],
     [
         ("The capital of France is", "Madrid"),
@@ -110,13 +108,22 @@ beginning_ending_pairs_groups1 = [
         ("The capital of Ukraine is", "Paris"),
     ],
     [
-        ("The largest continent is", "Asia"),
+        # ("The largest continent is", "Asia"),
         ("The largest planet is", "Jupiter"),
         ("The author of 1984 is", "George Orwell"),
-        ("The chemical symbol for gold is", "Au"),
+        # ("The author of 1984 is", "Ernest Hemingway"),
+        ("Marie Curie discovered", "radium"),
+        ("Prometheus stole", "fire"),
+        # ("The chemical symbol for gold is", "Au"),
     ],
 ]
 beginning_ending_pairs_groups2 = [
+    [
+        # * what's interesting, their disruption is completely stopped when using correct logit loss
+        # * for wrong capitals it's the opposite though! - correct logit makes disruption much stronger
+        ("The capital of Skyrim is", "Solitude"),
+        ("The capital of Rohan is", "Edoras"),
+    ],
     [
         ("Die Hauptstadt von Frankreich ist", "Paris"),
         ("La capital de Francia es", "París"),
@@ -126,13 +133,6 @@ beginning_ending_pairs_groups2 = [
         ("A capital de França é", "Paris"),
     ],
     [
-        # Using "was" - shorter versions
-        ("Napoleon was", "French"),
-        ("Caesar was", "Roman"),
-        ("Einstein was", "German"),
-        ("Mozart was", "Austrian"),
-    ],
-    [
         # Using "contains"
         ("Water contains", "hydrogen"),
         ("Salt contains", "sodium"),
@@ -140,12 +140,26 @@ beginning_ending_pairs_groups2 = [
         ("Air contains", "oxygen"),
     ],
     [
-        # Using "invented"
-        ("Marie Curie discovered", "radium"),
-        ("Prometheus stole", "fire"),
-        ("Atlas holds", "the world"),
-        ("Thomas Edison invented", "the light bulb"),
+        ("Napoleon is", "French"),
+        ("Napoleon was", "French"),
+        # ("Einstein is", "German"),
+        # ("Einstein was", "German"),
+        ("Mozart is", "Austrian"),
+        ("Mozart was", "Austrian"),
     ],
+    [
+        ("Gold is", "valuable"),
+        ("Gold was", "valuable"),
+    ],
+    [
+        ("The library is", "quiet"),
+        ("The library was", "quiet"),
+    ],
+    # [
+    #     # Using "invented"
+    #     ("Atlas holds", "the world"),
+    #     ("Thomas Edison invented", "the light bulb"),
+    # ],
     # [
     #     # Using "created"
     #     ("Mark Zuckerberg created", "Facebook"),
@@ -170,9 +184,7 @@ beginning_ending_pairs_groups2 = [
 ]
 
 
-def get_infos(beginning_ending_pairs):
-    loss_fn_name = "cross_entropy"
-    # loss_fn_name = "correct_logit"
+def get_infos(beginning_ending_pairs, loss_fn_name="cross_entropy"):
     # * refecence prompt
     beginning, ending = "The capital of France is", "Paris"
     # beginning, ending = "The capital of Italy is", "Paris"
@@ -236,193 +248,6 @@ def create_activation_visualization(act_tensor, max_vals):
     rgb_image[0, :, 2] = 0  # Blue channel stays 0
 
     return rgb_image
-
-
-# def create_plot(group_infos, slice_type):
-#     text_y_pos = 0.4
-#     """Create the main visualization plot"""
-
-#     # Calculate total rows and create height ratios
-#     total_rows = sum(len(group) for group in group_infos)
-#     num_gaps = len(group_infos) - 1  # gaps between groups
-
-#     # Build height ratios: group rows + gaps between groups
-#     height_ratios = []
-#     for i, group in enumerate(group_infos):
-#         height_ratios.extend([1] * len(group))  # rows for this group
-#         if i < len(group_infos) - 1:  # not the last group
-#             height_ratios.append(0.5)  # gap after this group
-
-#     # Create figure with custom gridspec for all groups
-#     # ICLR template is 5.5 inches wide
-#     fig = plt.figure(figsize=(5.5, total_rows * 0.2 + 0.2))  # Extra height for spacing
-
-#     gs = gridspec.GridSpec(
-#         total_rows + num_gaps,  # total rows + gaps
-#         3,
-#         width_ratios=[0.45, 0.1, 0.45],
-#         height_ratios=height_ratios,
-#         hspace=-0.01,  # No vertical spacing between rows
-#         wspace=0.15,  # Minimal horizontal spacing
-#         left=0.0,  # Remove left margin
-#         right=1.0,  # Remove right margin
-#         top=0.92,
-#         bottom=0.02,
-#     )
-
-#     # Create activation visualizations for each group
-#     def create_group_activation_image(group_infos):
-#         """Stack activation visualizations for a group vertically"""
-#         group_acts = []
-#         for info in reversed(group_infos):
-#             act_vis = create_activation_visualization(info[slice_type])
-#             # Remove the first dimension (1, 60, 3) -> (60, 3)
-#             group_acts.append(act_vis[0])
-
-#         # Stack vertically to create (n_rows, 60, 3)
-#         return np.stack(group_acts, axis=0)
-
-#     # Create activation images for all groups
-#     group_activation_images = []
-#     for group in group_infos:
-#         group_activation_images.append(create_group_activation_image(group))
-
-#     # Build mapping from info index to grid row
-#     all_infos = []
-#     row_indices = []
-#     current_row = 0
-
-#     for group_idx, group in enumerate(group_infos):
-#         for info in group:
-#             all_infos.append(info)
-#             row_indices.append(current_row)
-#             current_row += 1
-
-#         # Add gap after each group except the last
-#         if group_idx < len(group_infos) - 1:
-#             current_row += 1  # skip gap row
-
-#     # Process all infos with their corresponding row indices
-#     for i, info in enumerate(all_infos):
-#         actual_row = row_indices[i]
-
-#         # Column 1: Text with purple ending
-#         ax1 = fig.add_subplot(gs[actual_row, 0])
-#         ax1.set_xlim(0, 1)
-#         ax1.set_ylim(0, 1)
-#         ax1.axis("off")
-
-#         # Split text and color the ending purple
-#         beginning = info["beginning"]
-#         ending = info["ending"]
-
-#         # Display beginning text in black
-#         ax1.text(
-#             0.01,
-#             text_y_pos,
-#             beginning,
-#             va="center",
-#             ha="left",
-#             color="black",
-#         )
-
-#         # Display ending text in purple
-#         ax1.text(
-#             0.99,
-#             text_y_pos,
-#             ending,
-#             va="center",
-#             ha="right",
-#             color="purple",
-#             # weight="bold",
-#         )
-
-#         # Column 2: Cosine similarity with colored background
-#         ax2 = fig.add_subplot(gs[actual_row, 1])
-#         ax2.set_xlim(0, 1)
-#         ax2.set_ylim(0, 1)
-#         ax2.axis("off")
-
-#         # Convert cosine similarity to percentage
-#         cossim_val = info["cossim"]
-#         percentage = int(cossim_val * 100)
-
-#         # Create colored background: white (1,1,1) to red (1,0,0)
-#         # Interpolate based on absolute cosine similarity value
-#         assert cossim_val <= 1.001, cossim_val  # allow some numerical errors
-#         clipped_cossim = cossim_val.clamp(0, 1).item()
-#         bg_color = (
-#             1.0,
-#             1.0 - clipped_cossim,
-#             1.0 - clipped_cossim,
-#         )  # From white to red
-
-#         # Create background rectangle
-#         rect = patches.Rectangle((0, 0), 1, 1, linewidth=0, facecolor=bg_color)
-#         ax2.add_patch(rect)
-
-#         # Add percentage text - always black
-#         ax2.text(
-#             0.5,
-#             text_y_pos,
-#             f"{percentage}%",
-#             va="center",
-#             ha="center",
-#             color="black",
-#             # weight="bold",
-#         )
-
-#     # Create imshow for each group's activations
-#     current_row = 0
-#     for group_idx, group in enumerate(group_infos):
-#         group_size = len(group)
-
-#         # Create subplot for this group's activations
-#         ax3_group = fig.add_subplot(gs[current_row : current_row + group_size, 2])
-#         ax3_group.imshow(
-#             group_activation_images[group_idx],
-#             aspect="auto",
-#             extent=[0, 60, group_size, 0],
-#         )
-#         ax3_group.set_xlim(0, 60)
-#         ax3_group.set_ylim(0, group_size)
-#         ax3_group.set_xticks([])
-#         ax3_group.set_yticks([])
-#         for spine in ax3_group.spines.values():
-#             spine.set_visible(False)
-
-#         current_row += group_size
-
-#         # Add white spacing row if not the last group
-#         if group_idx < len(group_infos) - 1:
-#             spacing_ax = fig.add_subplot(gs[current_row, :])
-#             spacing_ax.axis("off")
-#             spacing_ax.set_facecolor("white")
-#             current_row += 1
-
-#     # Set column titles with proper positioning
-#     if total_rows > 0:
-#         # Calculate proper x positions based on the new gridspec
-#         fig.text(
-#             0.2,
-#             0.97,
-#             "Prompt",
-#             fontsize=12,
-#             ha="center",
-#             # weight="bold",
-#         )
-#         fig.text(
-#             0.5,
-#             0.97,
-#             "Update Cossim",
-#             fontsize=12,
-#             ha="center",
-#             # weight="bold",
-#         )
-#         if slice_type == "act":
-#             fig.text(0.8, 0.97, "Activations Slice", fontsize=12, ha="center")
-#         else:
-#             fig.text(0.8, 0.97, "Gradients Slice", fontsize=12, ha="center")
 
 
 def create_plot(group_infos):
@@ -630,7 +455,8 @@ def create_plot(group_infos):
 # %%
 group_infos = []
 for group in beginning_ending_pairs_groups1:
-    group_infos.append(get_infos(group))
+    group_infos.append(get_infos(group, loss_fn_name="cross_entropy"))
+    # group_infos.append(get_infos(group, loss_fn_name="correct_logit"))
 
 create_plot(group_infos)
 
@@ -641,8 +467,9 @@ plt.savefig(plot_path, bbox_inches="tight", dpi=300)
 
 # %%
 group_infos = []
-for group in beginning_ending_pairs_groups1[:2] + beginning_ending_pairs_groups2:
-    group_infos.append(get_infos(group))
+for group in beginning_ending_pairs_groups1[:1] + beginning_ending_pairs_groups2:
+    group_infos.append(get_infos(group, loss_fn_name="cross_entropy"))
+    # group_infos.append(get_infos(group, loss_fn_name="correct_logit"))
 
 create_plot(group_infos)
 
@@ -650,4 +477,3 @@ create_plot(group_infos)
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}_2.pdf"
 plt.savefig(plot_path, bbox_inches="tight", dpi=300)
-
