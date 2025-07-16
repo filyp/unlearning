@@ -38,6 +38,7 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
     assert model.config.name_or_path in [
         "meta-llama/Llama-3.2-1B",
         "meta-llama/Llama-3.2-3B",
+        "meta-llama/Llama-3.1-8B",
     ]
     pt.cuda.empty_cache()
 
@@ -68,7 +69,7 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
         probs = pt.softmax(last_token_logits, dim=-1)
         answer_probs = probs[:, answer_ids]
         # if not all(answer_probs.sum(dim=-1) > 0.2):
-        #     raise ValueError("Sum of answer probs is too low")
+            # raise ValueError("Sum of answer probs is too low")
 
         answer_probs /= answer_probs.sum(dim=-1, keepdim=True)  # normalize
         # assert pt.allclose(answer_probs.sum(dim=-1), pt.tensor(1.0, dtype=pt.bfloat16))

@@ -29,8 +29,10 @@ def cost(completion):
 
 # %%
 
-# orig_path = "wmdp_deduped_bio/dev_T"
-orig_path = "wmdp_deduped_bio/dev_V"
+orig_path = "wmdp_deduped_bio/dev_T"
+# orig_path = "wmdp_deduped_bio/dev_V"
+# orig_path = "wmdp_deduped_bio/T"
+# orig_path = "wmdp_deduped_bio/V"
 wmdp_mcq = load_local(f"{orig_path}.jsonl")
 path = repo_root() / "data" / f"{orig_path}_corpus.jsonl"
 assert not path.exists()
@@ -89,24 +91,27 @@ Answer: Operation Sea-Spray
 
 i = 0
 for q in wmdp_mcq:
+    print()
     print(f"Processing question {i}")
-    i += 1
-
-    # ! filter out long answers
+    print(q["question"])
     answer = q["choices"][q["answer"]]
-    if len(answer) > 40:  # todo allow 60 or even 80
-        print(f"Skipping question with long answer: {answer}")
-        continue
+    print(answer)
+    i += 1
 
     # ! filter non atomic answers
     if "all" in answer.lower() and (
         "above" in answer.lower() or "choices" in answer.lower()
     ):
-        print(f"Skipping 'all of the above' question: {answer}")
+        print(f"Skipping 'all of the above' question")
         continue
     if answer.lower() == "both" or answer.lower() == "neither":
-        print(f"Skipping 'both' or 'neither' question: {answer}")
+        print(f"Skipping 'both' or 'neither' question")
         continue
+
+    # # ! filter out long answers
+    # if len(answer) > 60:
+    #     print(f"Skipping question with long answer")
+    #     continue
 
     # # ! filter out questions with low accuracy
     # acc = eval_on([q], model, temperature=1)
@@ -114,7 +119,7 @@ for q in wmdp_mcq:
     #     print(f"Skipping question with accuracy {acc}")
     #     continue
 
-    print(answer)
+    continue
 
     # # %%
     user_input = f"Question: {q['question']}\nAnswer: {answer}"

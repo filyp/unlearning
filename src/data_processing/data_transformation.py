@@ -1,9 +1,13 @@
 # %%
+# os.sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import re
 
 import torch as pt
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from transformers import AutoModelForCausalLM
+
+from utils.evals import eval_on
+from utils.git_and_reproducibility import repo_root
 
 pt.set_default_device("cuda")
 base_url = "https://raw.githubusercontent.com/aghyad-deeb/unlearning_evaluation/refs/heads/main/data"
@@ -15,8 +19,9 @@ def load_low_mi_set(paths):
         "json", data_files=[f"{base_url}/{path}" for path in paths], split="train"
     )
 
-# todo: wmdp-deduped has been deduped to ensure low mutual information between splits
-# todo: but after we have already split, we could reintroduce the duplicates!
+
+# potential todo: wmdp-deduped has been deduped to ensure low mutual information between splits
+# potential todo: but after we have already split, we could reintroduce the duplicates!
 
 # %%
 questions_T = load_low_mi_set([
@@ -114,29 +119,41 @@ dev_questions = dev_questions.map(lambda x: {"s": f"dev_{x['s']}"})
 # Recombine the datasets
 questions = concatenate_datasets([train_questions, dev_questions])
 
-# %%
+# %% Llama-3.1-8B accuracies eval
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-3.1-8B", torch_dtype=pt.bfloat16, device_map="auto"
+)
+
+# questions = questions.map(
+#     lambda ex: {"Llama-3.2-1B": eval_on(Dataset.from_list([ex]), model, temperature=1)}
+# )
+question_to_acc = {}
+for ex in questions:
+    print(ex["question"])
+    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+    print(acc)
+    question_to_acc[ex["question"]] = acc
+
+# update the questions with the accuracy
+questions = questions.map(lambda ex: {"Llama-3.1-8B": question_to_acc[ex["question"]]})
+
+# %% Llama-3.2-1B accuracies eval
+del model
 model = AutoModelForCausalLM.from_pretrained(
     "meta-llama/Llama-3.2-1B", torch_dtype=pt.bfloat16, device_map="cuda"
 )
 
-# %%
-import os
+question_to_acc = {}
+for ex in questions:
+    print(ex["question"])
+    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+    print(acc)
+    question_to_acc[ex["question"]] = acc
 
-# add to pythonpath the parent directory
-os.sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from datasets import Dataset
-
-from utils.evals import eval_on
-
-# %%
-
-questions = questions.map(
-    lambda ex: {"Llama-3.2-1B": eval_on(Dataset.from_list([ex]), model, temperature=1)}
-)
+# update the questions with the accuracy
+questions = questions.map(lambda ex: {"Llama-3.2-1B": question_to_acc[ex["question"]]})
 
 # %%
-from git_and_reproducibility import repo_root
 
 general_data_path = repo_root() / "data"
 for category in ["bio", "cyber"]:
@@ -158,20 +175,20 @@ correct_corpus = load_low_mi_set([
     "wmdp-deduped/corpus_split_3.jsonl",
     "wmdp-deduped/corpus_split_4.jsonl",
 ])
-correct_corpus.to_json(general_data_path / "wmdp_deduped_correct_answers_corpus.jsonl")
+correct_corpus.to_json(general_data_path / "wmdp_deduped_deebs_corpus.jsonl")
 
 # %%
 
-wrong_answers_corpus = load_low_mi_set([
-    "wmdp-deduped/whp_corpus_split_0.jsonl",
-    "wmdp-deduped/whp_corpus_split_1.jsonl",
-    "wmdp-deduped/whp_corpus_split_2.jsonl",
-    "wmdp-deduped/whp_corpus_split_3.jsonl",
-    "wmdp-deduped/whp_corpus_split_4.jsonl",
-])
-wrong_answers_corpus.to_json(
-    general_data_path / "wmdp_deduped_wrong_answers_corpus.jsonl"
-)
+# wrong_answers_corpus = load_low_mi_set([
+#     "wmdp-deduped/whp_corpus_split_0.jsonl",
+#     "wmdp-deduped/whp_corpus_split_1.jsonl",
+#     "wmdp-deduped/whp_corpus_split_2.jsonl",
+#     "wmdp-deduped/whp_corpus_split_3.jsonl",
+#     "wmdp-deduped/whp_corpus_split_4.jsonl",
+# ])
+# wrong_answers_corpus.to_json(
+#     general_data_path / "wmdp_deduped_wrong_answers_corpus.jsonl"
+# )
 
 # %%
 
