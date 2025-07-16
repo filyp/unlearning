@@ -29,16 +29,20 @@ def cost(completion):
 
 # %%
 
-orig_path = "wmdp_deduped_bio/dev_T"
+# orig_path = "wmdp_deduped_bio/dev_T"
 # orig_path = "wmdp_deduped_bio/dev_V"
 # orig_path = "wmdp_deduped_bio/T"
 # orig_path = "wmdp_deduped_bio/V"
+# orig_path = "wmdp_deduped_cyber/dev_T"
+# orig_path = "wmdp_deduped_cyber/dev_V"
+# orig_path = "wmdp_deduped_cyber/T"
+orig_path = "wmdp_deduped_cyber/V"
+
 wmdp_mcq = load_local(f"{orig_path}.jsonl")
 path = repo_root() / "data" / f"{orig_path}_corpus.jsonl"
 assert not path.exists()
 
 
-# %%
 class Corpus(BaseModel):
     answer_original: str
     answer_core: str
@@ -84,11 +88,6 @@ Answer: Operation Sea-Spray
 }
 """
 
-# model_id = "meta-llama/Llama-3.2-1B"
-# model = AutoModelForCausalLM.from_pretrained(
-#     model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-# )
-
 i = 0
 for q in wmdp_mcq:
     print()
@@ -108,18 +107,17 @@ for q in wmdp_mcq:
         print(f"Skipping 'both' or 'neither' question")
         continue
 
-    # # ! filter out long answers
-    # if len(answer) > 60:
-    #     print(f"Skipping question with long answer")
-    #     continue
+    # ! filter out long answers
+    if len(answer) > 60:
+        print(f"Skipping question with long answer")
+        continue
 
     # # ! filter out questions with low accuracy
-    # acc = eval_on([q], model, temperature=1)
+    # acc = q["Llama-3.1-8B"]
+    # print(f"Accuracy: {acc}")
     # if acc < 0.5:
     #     print(f"Skipping question with accuracy {acc}")
     #     continue
-
-    continue
 
     # # %%
     user_input = f"Question: {q['question']}\nAnswer: {answer}"
