@@ -1,5 +1,6 @@
 # model_id: meta-llama/Llama-3.2-3B
-model_id: meta-llama/Llama-3.2-1B
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
 dataset: wmdp_bio
 batch_size: 16
 normalize: true
@@ -38,6 +39,7 @@ experiment_list:
       retaining_rate: 1e-5
 
 # experiments to do:
+# first plot with CIR, GA and GA with handicap
 # MAML vs no MAML
 # wmdp on my dataset with only_train_on_answer vs without vs Deeb's corpus
 # * CIR ablation study + loss fns comparison

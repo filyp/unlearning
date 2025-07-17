@@ -42,10 +42,10 @@ wikitext = wikitext.filter(lambda x: x["text"])  # filter out empty texts
 # ! load proper datasets
 if conf.dataset == "wmdp_bio":
     # todo filter out the ones with low acc for llama 8b
-    T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
-    T = T.filter(lambda x: x["Llama-3.2-1B"] > 0.25)
-    V = V.filter(lambda x: x["Llama-3.2-1B"] > 0.25)
+    T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
+    T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     # T = T.filter(lambda x: len(x["answer_core"]) <= 40)
     # V = V.filter(lambda x: len(x["answer_core"]) <= 40)
     T_and_V = concatenate_datasets([T, V])
@@ -64,8 +64,8 @@ if conf.dataset == "wmdp_bio":
         for x in _txts.select(range(len(training_batches)))
     ]
 elif conf.dataset == "wmdp_cyber":
-    T = load_local(f"wmdp_deduped_cyber/dev_T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_cyber/dev_V_corpus.jsonl")
+    T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
     T_and_V = concatenate_datasets([T, V])
     # retain_set = load_fineweb_cyber_corpus()
     raise NotImplementedError("Cyber dataset not implemented yet")
@@ -78,10 +78,6 @@ elif conf.dataset == "jigsaw_threats":
     # but it's still nice to do
     raise NotImplementedError("Jigsaw dataset not implemented yet")
     retain_set = jigsaw_benign  # format batches properly
-
-# len(T)
-# len(V)
-# V["Llama-3.2-1B"]
 
 
 def get_metrics(model):
@@ -138,7 +134,7 @@ run_name = "_".join(str(v) for v in run_conf.values())
 wandb.init(
     project=project_name,
     name=run_name,
-    group=conf.dataset,
+    group=conf.dataset + "_" + conf.model_id,
     config=OmegaConf.to_container(run_conf),
 )
 
@@ -219,7 +215,7 @@ for ex in V:
 wandb.init(
     project="ret_" + project_name,
     name=run_name,
-    group=conf.dataset,
+    group=conf.dataset + "_" + conf.model_id,
     config=OmegaConf.to_container(run_conf),
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=conf.retraining_rate)
