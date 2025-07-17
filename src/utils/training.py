@@ -85,6 +85,7 @@ def PCA_gpu(v, n_components=10, center=True):
     # Compute covariance matrix
     cov = (v.T @ v) / (v.shape[0] - 1)
     # Compute eigenvalues and eigenvectors
+    # * pt.linalg.eigh seems to leak memory!!
     eigenvalues, eigenvectors = pt.linalg.eigh(cov)
     # Sort in descending order
     idx = eigenvalues.argsort(descending=True)
@@ -100,6 +101,17 @@ def get_grads_dict(model):
     )
     model.zero_grad(set_to_none=True)
     return grads_dict
+
+
+def get_update_norm(model):
+    """L2 norm of weight.grad, computed across all the trainable weights."""
+    return (
+        sum(
+            m.weight.grad.to(pt.float32).norm() ** 2
+            for _, m in trainable_modules(model)
+        )
+        ** 0.5
+    )
 
 
 # def make_sure_optimal_values_are_not_near_range_edges(study):

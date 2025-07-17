@@ -1,0 +1,43 @@
+# model_id: meta-llama/Llama-3.2-3B
+model_id: meta-llama/Llama-3.2-1B
+dataset: wmdp_bio
+batch_size: 16
+normalize: false
+
+retraining_rate: 3e-5
+retraining_epochs: 30
+
+max_num_epochs: 50
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+target_modules:
+    - gate_proj
+    - up_proj
+    - down_proj
+
+experiment_number: 0
+experiment_list:
+    - algorithm: CIR
+      num_pc: 10
+      loss_fn_name: correct_logit
+      only_train_on_answer: true
+      unlearning_rate: 3e-3
+
+    - algorithm: GA
+      loss_fn_name: neg_cross_entropy
+      only_train_on_answer: true
+      # unlearning_rate: 3e-4
+
+    - algorithm: GA
+      loss_fn_name: neg_cross_entropy
+      only_train_on_answer: true
+      # unlearning_rate: 3e-4
+      # retaining_rate: 3e-4
+
+# experiments to do:
+# MAML vs no MAML
+# wmdp on my dataset with only_train_on_answer vs without vs Deeb's corpus
+# * CIR ablation study + loss fns comparison

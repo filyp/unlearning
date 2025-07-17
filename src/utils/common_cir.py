@@ -28,7 +28,7 @@ def save_grad_hook(module, args):
 def prepare_model(conf, use_every_n_layers=None):
     # * load model
     model = AutoModelForCausalLM.from_pretrained(
-        conf.model_id, torch_dtype=pt.bfloat16, device_map=conf.device
+        conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
     )
     model.config.use_cache = False
 
@@ -70,30 +70,29 @@ def get_last_grad(module, attn_mask):
 
 
 # but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it
-def get_act_principal_components(model, batches, num_pc=8, exact_pca=False, niter=8):
+def get_act_principal_components(model, batches, num_pc=10, niter=16):
     # ! gather acts
     acts_list = {n: [] for n, _ in trainable_modules(model)}
 
     for batch in batches:
-        model(**batch, output_hidden_states=True)
-
+        with pt.no_grad():
+            model(**batch)
         for n, module in trainable_modules(model):
-            acts_list[n].append(get_last_act(module, batch["attention_mask"]))
+            acts_list[n].append(get_last_act(module, batch["attention_mask"]).to("cpu"))
 
-    # start_time = time.time()
     # ! calculate projection basis
     act_means = {}
     act_pca_components = {}
-    for n, module in trainable_modules(model):
-        acts_flattened = pt.cat(acts_list.pop(n)).float()
+    for n, _ in trainable_modules(model):
+        pt.cuda.empty_cache()
+        acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
         act_means[n] = acts_flattened.mean(axis=0)
         # ! calculate act PCA
-        if exact_pca:
-            act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
-        else:
-            _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
-            act_pca_components[n] = V.T
-    # print(time.time() - start_time)
+        # if exact_pca:
+            # #  note: it seems to leak memory!!
+            # act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
+        _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
+        act_pca_components[n] = V.T
 
     return act_means, act_pca_components
 

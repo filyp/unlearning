@@ -4,6 +4,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 
 from utils.git_and_reproducibility import repo_root
+from utils.training import prepare_answer_mask
 
 # # mmlu_set = load_dataset("cais/mmlu", "college_biology", split="test")
 # mmlu_set = load_dataset("cais/mmlu", "all", split="validation")
@@ -21,25 +22,6 @@ def load_local(path):
 
 
 # %%
-def load_batches(corpus, model_id, batch_size=4, max_length=128):
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    corpus = corpus.shuffle(seed=42)
-    corpus = corpus.batch(batch_size)
-    batches = [
-        tokenizer(
-            x["text"],
-            max_length=max_length,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-        )
-        for x in corpus
-    ]
-    return batches
-
-
 def load_fineweb_edu_corpus():
     corpus = load_dataset(
         "HuggingFaceFW/fineweb-edu",
@@ -84,7 +66,6 @@ def load_fineweb_bio_corpus():
 #     return [ex for ex in mmlu_dataset if ex["subject"] not in categories_to_reject]
 
 
-# %%
 def load_jigsaw_dataset():
     full_path = repo_root() / "data" / "jigsaw" / "train.csv"
     if not full_path.exists():
@@ -95,3 +76,53 @@ and put the csv files in the data/jigsaw directory.
         """
         raise FileNotFoundError(txt)
     return pd.read_csv(full_path)
+
+
+# %%
+def load_batches(corpus, model_id, batch_size=4, max_length=128):
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    corpus = corpus.shuffle(seed=42)
+    corpus = corpus.batch(batch_size)
+    batches = [
+        tokenizer(
+            x["text"],
+            # todo use tokenizer conf
+            max_length=max_length,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+        for x in corpus
+    ]
+    return batches
+
+
+def load_batches_from_pairs_set(
+    dataset, conf, only_train_on_answer=True, range_=range(0, 7)
+):
+    batch_size = conf.batch_size
+    tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    beginnings = []
+    fulls = []
+    for idx in range_:
+        for q in dataset:
+            beginnings.append(q["contexts"][idx])
+            fulls.append(f"{q['contexts'][idx]} {q['answer_core']}")
+
+    batches = []
+    for i in range(0, len(beginnings), batch_size):
+        b_txt = beginnings[i : i + batch_size]
+        f_txt = fulls[i : i + batch_size]
+        beginning_batch = tokenizer(b_txt, **conf.tokenizer)
+        full_batch = tokenizer(f_txt, **conf.tokenizer)
+
+        if only_train_on_answer:
+            full_batch["answer_mask"] = prepare_answer_mask(beginning_batch, full_batch)
+
+        batches.append(full_batch)
+
+    return batches
