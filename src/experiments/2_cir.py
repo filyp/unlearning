@@ -49,8 +49,6 @@ if conf.dataset == "wmdp_bio":
     # T = T.filter(lambda x: len(x["answer_core"]) <= 40)
     # V = V.filter(lambda x: len(x["answer_core"]) <= 40)
     T_and_V = concatenate_datasets([T, V])
-    # todo construct retain_batches
-    retain_set = load_fineweb_bio_corpus()
 
     only_ans = run_conf.only_train_on_answer
     training_batches = load_batches_from_pairs_set(T_and_V, conf, only_ans, range(0, 7))
@@ -58,7 +56,13 @@ if conf.dataset == "wmdp_bio":
     loss_eval_batches = load_batches_from_pairs_set(V, conf, only_ans, range(7, 10))
     # todo optionally we could try retain set instead
     control_batches = training_batches
-    # on range(7, 10) we could eval training loss, but since we already have MCQ, we don't need to
+
+    retain_set = load_fineweb_bio_corpus()
+    _txts = retain_set.shuffle(seed=42).batch(conf.batch_size)
+    retain_batches = [
+        tokenizer(x["text"], **conf.tokenizer)
+        for x in _txts.select(range(len(training_batches)))
+    ]
 elif conf.dataset == "wmdp_cyber":
     T = load_local(f"wmdp_deduped_cyber/dev_T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_cyber/dev_V_corpus.jsonl")
@@ -97,7 +101,7 @@ def get_metrics(model):
     if conf.dataset == "wmdp_bio" or conf.dataset == "wmdp_cyber":
         res["forget_acc"] = eval_on(V, model, temperature=1)
 
-        # ! eval forget loss
+        # eval forget loss - this one is rather optional
         res["forget_loss"] = 0
         for batch in loss_eval_batches:
             with pt.no_grad():
@@ -113,9 +117,10 @@ def get_metrics(model):
 
 # ! pass through control corpus, to collect acts
 model = prepare_model(conf)
-act_means, act_pca_components = get_act_principal_components(
-    model, control_batches, run_conf.num_pc
-)
+if run_conf.algorithm == "CIR":
+    act_means, act_pca_components = get_act_principal_components(
+        model, control_batches, run_conf.num_pc
+    )
 
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.unlearning_rate)
 if "retaining_rate" in run_conf:
@@ -185,7 +190,7 @@ for epoch in range(conf.max_num_epochs):
         optimizer.step()
 
         if "retaining_rate" in run_conf:
-            retaining_batch = retain_set[i % len(retain_set)]
+            retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch)
             loss = loss_fns.cross_entropy(output, retaining_batch)
@@ -211,25 +216,25 @@ for ex in V:
 
 # %% retraining on T
 
-# wandb.init(
-#     project="ret_" + project_name,
-#     name=run_name,
-#     group=conf.dataset,
-#     config=OmegaConf.to_container(run_conf),
-# )
-# optimizer = pt.optim.SGD(model.parameters(), lr=conf.retraining_rate)
+wandb.init(
+    project="ret_" + project_name,
+    name=run_name,
+    group=conf.dataset,
+    config=OmegaConf.to_container(run_conf),
+)
+optimizer = pt.optim.SGD(model.parameters(), lr=conf.retraining_rate)
 
-# for epoch in range(conf.retraining_epochs):
-#     model.train()
-#     for batch in retraining_batches:
-#         model.zero_grad(set_to_none=True)
-#         output = model(**batch)
-#         loss = loss_fns.cross_entropy(output, batch)
-#         loss.backward()
-#         optimizer.step()
+for epoch in range(conf.retraining_epochs):
+    model.train()
+    for batch in retraining_batches:
+        model.zero_grad(set_to_none=True)
+        output = model(**batch)
+        loss = loss_fns.cross_entropy(output, batch)
+        loss.backward()
+        optimizer.step()
 
-# # ! get metrics
-# res = get_metrics(model)
-# wandb.log(res)
+    # ! get metrics
+    res = get_metrics(model)
+    wandb.log(res)
 
-# wandb.finish()
+wandb.finish()

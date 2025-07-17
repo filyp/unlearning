@@ -2,10 +2,10 @@
 model_id: meta-llama/Llama-3.2-1B
 dataset: wmdp_bio
 batch_size: 16
-normalize: false
+normalize: true
 
-retraining_rate: 3e-5
-retraining_epochs: 30
+retraining_rate: 1e-5
+retraining_epochs: 20
 
 max_num_epochs: 50
 tokenizer:
@@ -18,7 +18,7 @@ target_modules:
     - up_proj
     - down_proj
 
-experiment_number: 0
+experiment_number: 2
 experiment_list:
     - algorithm: CIR
       num_pc: 10
@@ -29,13 +29,13 @@ experiment_list:
     - algorithm: GA
       loss_fn_name: neg_cross_entropy
       only_train_on_answer: true
-      # unlearning_rate: 3e-4
+      unlearning_rate: 1e-5
 
     - algorithm: GA
       loss_fn_name: neg_cross_entropy
       only_train_on_answer: true
-      # unlearning_rate: 3e-4
-      # retaining_rate: 3e-4
+      unlearning_rate: 4e-6
+      retaining_rate: 1e-5
 
 # experiments to do:
 # MAML vs no MAML
