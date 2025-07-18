@@ -187,6 +187,20 @@ for epoch in range(conf.max_num_epochs):
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
+
+        # ! calculate act PCA
+        act_means = {}
+        grads_means = {}
+        act_pca_components = {}
+        for n, _ in trainable_modules(model):
+            pt.cuda.empty_cache()
+            acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
+            act_means[n] = acts_flattened.mean(axis=0)
+            grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
+            grads_means[n] = grads_flattened.mean(axis=0)
+            _, S, V = pt.pca_lowrank(acts_flattened, run_conf.num_pc, niter=16)
+            act_pca_components[n] = V.T
+
         if epoch == 0:
             continue
 
@@ -210,19 +224,6 @@ for epoch in range(conf.max_num_epochs):
             loss = cross_entropy(output, retaining_batch)
             loss.backward()
             retain_optimizer.step()
-
-        # ! calculate act PCA
-        act_means = {}
-        grads_means = {}
-        act_pca_components = {}
-        for n, _ in trainable_modules(model):
-            pt.cuda.empty_cache()
-            acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
-            act_means[n] = acts_flattened.mean(axis=0)
-            grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
-            grads_means[n] = grads_flattened.mean(axis=0)
-            _, S, V = pt.pca_lowrank(acts_flattened, run_conf.num_pc, niter=16)
-            act_pca_components[n] = V.T
 
     # ! get metrics
     res = get_metrics(model)
