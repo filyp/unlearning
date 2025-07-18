@@ -17,6 +17,7 @@ from transformers import AutoTokenizer
 
 import wandb
 from utils import loss_fns
+from utils.loss_fns import cross_entropy
 from utils.common_cir import *
 from utils.data_loading import *
 from utils.evals import eval_on
@@ -40,8 +41,7 @@ tokenizer.pad_token = tokenizer.eos_token
 wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
 _txts = wikitext.shuffle(seed=42).batch(conf.batch_size)
 wikitext_batches = [
-    tokenizer(x["text"], **conf.tokenizer)
-    for x in _txts.select(range(16))
+    tokenizer(x["text"], **conf.tokenizer) for x in _txts.select(range(16))
 ]
 
 # ! load proper datasets
@@ -93,7 +93,7 @@ def get_metrics(model):
     for batch in wikitext_batches:
         with pt.no_grad():
             output = model(**batch)
-            res["wikitext_loss"] += loss_fns.cross_entropy(output, batch).item()
+            res["wikitext_loss"] += cross_entropy(output, batch).item()
     res["wikitext_loss"] /= len(wikitext_batches)
 
     # ! eval forget acc
@@ -102,12 +102,16 @@ def get_metrics(model):
 
         # eval forget loss - this one is rather optional
         res["forget_loss"] = 0
+        res["context_loss"] = 0
         for batch in loss_eval_batches:
-            # todo just look at the answer loss ; separately log context loss
             with pt.no_grad():
                 output = model(**batch)
-                res["forget_loss"] += loss_fns.cross_entropy(output, batch).item()
+                answer_mask = batch["answer_mask"]
+                context_mask = batch["attention_mask"] & ~answer_mask
+                res["forget_loss"] += cross_entropy(output, batch, answer_mask).item()
+                res["context_loss"] += cross_entropy(output, batch, context_mask).item()
         res["forget_loss"] /= len(loss_eval_batches)
+        res["context_loss"] /= len(loss_eval_batches)
 
     print(res)
     return res
@@ -117,11 +121,6 @@ def get_metrics(model):
 
 # ! pass through control corpus, to collect acts
 model = prepare_model(conf)
-if run_conf.algorithm == "CIR":
-    act_means, act_pca_components = get_act_principal_components(
-        # todo maybe try grad acc again
-        model, control_batches, run_conf.num_pc
-    )
 
 optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.unlearning_rate)
 if "retaining_rate" in run_conf:
@@ -145,17 +144,16 @@ wandb.init(
 
 initial_res = get_metrics(model)
 wandb.log(initial_res)
+assert run_conf.algorithm in ["CIRdyna", "CIRdynaG", "GA"]
 
 # % full training loop
 start_time = time.time()
 for epoch in range(conf.max_num_epochs):
     pt.cuda.empty_cache()
 
-    if run_conf.algorithm == "CIRdyna":
-        # todo this needs to be optimized
-        act_means, act_pca_components = get_act_principal_components(
-            model, control_batches, run_conf.num_pc
-        )
+    # note: this implementation reuses the normal epoch, so only works if control_batches=training_batches
+    acts_list = {n: [] for n, _ in trainable_modules(model)}
+    grads_list = {n: [] for n, _ in trainable_modules(model)}
 
     # ! one epoch
     model.train()
@@ -169,20 +167,28 @@ for epoch in range(conf.max_num_epochs):
         loss.backward()
 
         # ! here we modify the grad
-        if run_conf.algorithm == "CIR" or run_conf.algorithm == "CIRdyna":
+        if run_conf.algorithm == "CIRdyna":
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"])
                 grads = get_last_grad(m, batch["attention_mask"])
                 assert len(acts.shape) == len(grads.shape) == 2
+                acts_list[n].append(acts.to("cpu"))
+                grads_list[n].append(grads.to("cpu"))
+                if epoch == 0:
+                    continue
 
                 # ! proj out the means and PCA components
                 acts -= project_out(acts, act_means[n])
                 for comp in act_pca_components[n]:
                     acts -= project_out(acts, comp)
+                if run_conf.algorithm == "CIRdynaG":
+                    grads -= project_out(grads, grads_means[n])
 
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
+        if epoch == 0:
+            continue
 
         # ! normalize grads
         update_norm = get_update_norm(model)
@@ -201,9 +207,22 @@ for epoch in range(conf.max_num_epochs):
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch)
-            loss = loss_fns.cross_entropy(output, retaining_batch)
+            loss = cross_entropy(output, retaining_batch)
             loss.backward()
             retain_optimizer.step()
+
+        # ! calculate act PCA
+        act_means = {}
+        grads_means = {}
+        act_pca_components = {}
+        for n, _ in trainable_modules(model):
+            pt.cuda.empty_cache()
+            acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
+            act_means[n] = acts_flattened.mean(axis=0)
+            grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
+            grads_means[n] = grads_flattened.mean(axis=0)
+            _, S, V = pt.pca_lowrank(acts_flattened, run_conf.num_pc, niter=16)
+            act_pca_components[n] = V.T
 
     # ! get metrics
     res = get_metrics(model)
@@ -237,7 +256,7 @@ for epoch in range(conf.retraining_epochs):
     for batch in retraining_batches:
         model.zero_grad(set_to_none=True)
         output = model(**batch)
-        loss = loss_fns.cross_entropy(output, batch)
+        loss = cross_entropy(output, batch)
         loss.backward()
         optimizer.step()
 
@@ -245,4 +264,5 @@ for epoch in range(conf.retraining_epochs):
     res = get_metrics(model)
     wandb.log(res)
 
+wandb.finish()
 wandb.finish()

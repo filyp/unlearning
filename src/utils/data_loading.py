@@ -99,9 +99,7 @@ def load_batches(corpus, model_id, batch_size=4, max_length=128):
     return batches
 
 
-def load_batches_from_pairs_set(
-    dataset, conf, only_train_on_answer=True, range_=range(0, 7)
-):
+def load_batches_from_pairs_set(dataset, conf, range_=range(0, 7)):
     batch_size = conf.batch_size
     tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
     tokenizer.pad_token = tokenizer.eos_token
@@ -119,9 +117,7 @@ def load_batches_from_pairs_set(
         f_txt = fulls[i : i + batch_size]
         beginning_batch = tokenizer(b_txt, **conf.tokenizer)
         full_batch = tokenizer(f_txt, **conf.tokenizer)
-
-        if only_train_on_answer:
-            full_batch["answer_mask"] = prepare_answer_mask(beginning_batch, full_batch)
+        full_batch["answer_mask"] = prepare_answer_mask(beginning_batch, full_batch)
 
         batches.append(full_batch)
 
