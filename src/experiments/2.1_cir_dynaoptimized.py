@@ -214,7 +214,7 @@ for epoch in range(conf.max_num_epochs):
     if run_conf.algorithm in ["CIRdyna", "CIRdynaG"]:
         # ! calculate act PCA
         act_means, grad_means, act_pca_components = get_projections(
-            acts_list, grads_list, run_conf.num_pcs
+            acts_list, grads_list, run_conf.num_pc
         )
 
     # ! get metrics
