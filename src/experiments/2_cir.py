@@ -36,8 +36,13 @@ pt.set_default_device("cuda")
 tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 
-wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train")
-wikitext = wikitext.filter(lambda x: x["text"])  # filter out empty texts
+# ! load wikitext batches
+wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
+_txts = wikitext.shuffle(seed=42).batch(conf.batch_size)
+wikitext_batches = [
+    tokenizer(x["text"], **conf.tokenizer)
+    for x in _txts.select(range(16))
+]
 
 # ! load proper datasets
 if conf.dataset == "wmdp_bio":
@@ -86,12 +91,11 @@ def get_metrics(model):
 
     # ! eval wikitext
     res["wikitext_loss"] = 0
-    for ex in wikitext.select(range(32)):
-        batch = tokenizer(ex["text"], **conf.tokenizer)
+    for batch in wikitext_batches:
         with pt.no_grad():
             output = model(**batch)
             res["wikitext_loss"] += loss_fns.cross_entropy(output, batch).item()
-    res["wikitext_loss"] /= 32
+    res["wikitext_loss"] /= len(wikitext_batches)
 
     # ! eval forget acc
     if conf.dataset == "wmdp_bio" or conf.dataset == "wmdp_cyber":

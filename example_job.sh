@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=unlearn_relearn
+#SBATCH --job-name=cir
 #SBATCH --time=00:30:00
 #SBATCH --account=plgunlearningai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
