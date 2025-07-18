@@ -21,7 +21,7 @@ target_modules:
 
 experiment_number: 0
 experiment_list:
-    - algorithm: CIR
+    - algorithm: CIRdyna
       num_pc: 6
       loss_fn_name: correct_logit
       only_train_on_answer: true

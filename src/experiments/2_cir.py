@@ -150,6 +150,11 @@ start_time = time.time()
 for epoch in range(conf.max_num_epochs):
     pt.cuda.empty_cache()
 
+    if run_conf.algorithm == "CIRdyna":
+        act_means, act_pca_components = get_act_principal_components(
+            model, control_batches, run_conf.num_pc
+        )
+
     # ! one epoch
     model.train()
     for i, batch in enumerate(training_batches):
@@ -161,7 +166,7 @@ for epoch in range(conf.max_num_epochs):
         loss.backward()
 
         # ! here we modify the grad
-        if run_conf.algorithm == "CIR":
+        if run_conf.algorithm == "CIR" or run_conf.algorithm == "CIRdyna":
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"])
                 grads = get_last_grad(m, batch["attention_mask"])
