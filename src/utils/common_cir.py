@@ -1,8 +1,5 @@
-from copy import copy
-import time
-
 import torch as pt
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
 from utils.training import PCA_gpu, trainable_modules
 
@@ -103,7 +100,7 @@ def get_projections(acts_list, grads_list, num_pc=10, niter=16):
     act_means = {}
     grads_means = {}
     act_pca_components = {}
-    for n in copy(acts_list.keys()):
+    for n in list(acts_list.keys()):
         pt.cuda.empty_cache()
         acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
         act_means[n] = acts_flattened.mean(axis=0)
