@@ -17,11 +17,11 @@ from transformers import AutoTokenizer
 
 import wandb
 from utils import loss_fns
-from utils.loss_fns import cross_entropy
 from utils.common_cir import *
 from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import repo_root
+from utils.loss_fns import cross_entropy
 from utils.training import get_update_norm, set_seeds, trainable_modules
 
 # plt dark theme
@@ -46,7 +46,6 @@ wikitext_batches = [
 
 # ! load proper datasets
 if conf.dataset == "wmdp_bio":
-    # todo filter out the ones with low acc for llama 8b
     T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
@@ -182,7 +181,7 @@ for epoch in range(conf.max_num_epochs):
                 for comp in act_pca_components[n]:
                     acts -= project_out(acts, comp)
                 if run_conf.algorithm == "CIRdynaG":
-                    grads -= project_out(grads, grads_means[n])
+                    grads -= project_out(grads, grad_means[n])
 
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
@@ -214,17 +213,9 @@ for epoch in range(conf.max_num_epochs):
 
     if run_conf.algorithm in ["CIRdyna", "CIRdynaG"]:
         # ! calculate act PCA
-        act_means = {}
-        grads_means = {}
-        act_pca_components = {}
-        for n, _ in trainable_modules(model):
-            pt.cuda.empty_cache()
-            acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
-            act_means[n] = acts_flattened.mean(axis=0)
-            grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
-            grads_means[n] = grads_flattened.mean(axis=0)
-            _, S, V = pt.pca_lowrank(acts_flattened, run_conf.num_pc, niter=16)
-            act_pca_components[n] = V.T
+        act_means, grad_means, act_pca_components = get_projections(
+            acts_list, grads_list, run_conf.num_pcs
+        )
 
     # ! get metrics
     res = get_metrics(model)

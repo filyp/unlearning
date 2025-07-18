@@ -1,3 +1,4 @@
+from copy import copy
 import time
 
 import torch as pt
@@ -71,6 +72,7 @@ def get_last_grad(module, attn_mask):
 
 # but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it
 def get_act_principal_components(model, batches, num_pc=10, niter=16):
+    # maybe deprecate this in favor of get_projections
     # ! gather acts
     acts_list = {n: [] for n, _ in trainable_modules(model)}
 
@@ -96,6 +98,21 @@ def get_act_principal_components(model, batches, num_pc=10, niter=16):
 
     return act_means, act_pca_components
 
+
+def get_projections(acts_list, grads_list, num_pc=10, niter=16):
+    act_means = {}
+    grads_means = {}
+    act_pca_components = {}
+    for n in copy(acts_list.keys()):
+        pt.cuda.empty_cache()
+        acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
+        act_means[n] = acts_flattened.mean(axis=0)
+        grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
+        grads_means[n] = grads_flattened.mean(axis=0)
+        _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=16)
+        act_pca_components[n] = V.T
+
+    return act_means, grads_means, act_pca_components
 
 # # for comparing similarity of full and approximate PCA
 # ref = list(act_pca_components.values())[0]

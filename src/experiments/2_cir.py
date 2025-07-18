@@ -46,7 +46,6 @@ wikitext_batches = [
 
 # ! load proper datasets
 if conf.dataset == "wmdp_bio":
-    # todo filter out the ones with low acc for llama 8b
     T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
