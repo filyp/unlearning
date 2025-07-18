@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cir
-#SBATCH --time=00:30:00
+#SBATCH --time=01:30:00
 #SBATCH --account=plgunlearningai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
 #SBATCH --gres=gpu:1
@@ -16,12 +16,12 @@ export TORCH_HOME=$SCRATCH/.cache/torch
 cd $HOME/unlearning
 source .venv/bin/activate
 
-# debug
-srun echo $CUDA_VISIBLE_DEVICES
-srun echo $HF_HOME
-srun which python
-srun pwd
-srun ls -al
-srun nvidia-smi
+# # debug
+# srun echo $CUDA_VISIBLE_DEVICES
+# srun echo $HF_HOME
+# srun which python
+# srun pwd
+# srun ls -al
+# srun nvidia-smi
 
 srun python src/experiments/2_cir.py
