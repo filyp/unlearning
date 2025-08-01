@@ -56,15 +56,12 @@ if conf.dataset == "wmdp_bio":
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
-    # todo, limit again to 40, reenable and test
-    # T = T.filter(lambda x: len(x["answer_core"]) <= 40)
-    # V = V.filter(lambda x: len(x["answer_core"]) <= 40)
     T_and_V = concatenate_datasets([T, V])
 
     training_batches = load_batches_from_pairs_set(T_and_V, conf, range(0, 3))
     retraining_batches = load_batches_from_pairs_set(T, conf, range(0, 3))
     loss_eval_batches = load_batches_from_pairs_set(V, conf, range(7, 10))
-    # todo optionally we could try retain set instead
+    # optionally we could try retain set instead
     control_batches = training_batches
 
     retain_set = load_fineweb_bio_corpus()
@@ -92,8 +89,30 @@ elif conf.dataset == "wmdp_bio_deebs":
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
 
     t_questions = set(T["question"])
+    v_questions = set(V["question"])
     t_texts = deebs_corpus.filter(lambda x: x["original_question"] in t_questions)
-    len(t_texts)
+    v_texts = deebs_corpus.filter(lambda x: x["original_question"] in v_questions)
+    t_and_v_texts = concatenate_datasets([t_texts, v_texts])
+
+    training_batches = [
+        tokenizer(texts, **conf.tokenizer)
+        for texts in t_and_v_texts.shuffle(seed=42).batch(conf.batch_size)["text"]
+    ]
+    retraining_batches = [
+        tokenizer(texts, **conf.tokenizer)
+        for texts in t_texts.shuffle(seed=42).batch(conf.batch_size)["text"]
+    ]
+    loss_eval_batches = load_batches_from_pairs_set(V, conf, range(7, 10))
+    # optionally we could try retain set instead
+    control_batches = training_batches
+
+    retain_set = load_fineweb_bio_corpus()
+    _txts = retain_set.shuffle(seed=42).batch(conf.batch_size)
+    retain_batches = [
+        tokenizer(x["text"], **conf.tokenizer)
+        for x in _txts.select(range(len(training_batches)))
+    ]
+
 
 elif conf.dataset == "wmdp_cyber_deebs":
     raise NotImplementedError("Cyber dataset not implemented yet")
@@ -107,9 +126,6 @@ elif conf.dataset == "jigsaw_threats":
     # but it's still nice to do
     raise NotImplementedError("Jigsaw dataset not implemented yet")
     retain_set = jigsaw_benign  # format batches properly
-
-# %%
-# %%
 
 # %%
 
