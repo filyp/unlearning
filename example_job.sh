@@ -24,4 +24,4 @@ source .venv/bin/activate
 # srun ls -al
 # srun nvidia-smi
 
-srun python src/experiments/2.1_cir_dynaoptimized.py
+srun python src/experiments/3.2_cir_dyna.py
