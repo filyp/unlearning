@@ -33,7 +33,7 @@ from utils.training import get_update_norm, set_seeds, trainable_modules
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
-conf = OmegaConf.load(repo_root() / "configs/2_cir.yaml")
+conf = OmegaConf.load(repo_root() / "configs/cir.yaml")
 rconf = conf.experiment_list[conf.experiment_number]
 
 # ! setup
