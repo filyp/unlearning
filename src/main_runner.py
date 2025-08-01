@@ -88,8 +88,19 @@ elif cfg.dataset == "wmdp_cyber":
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
     T_and_V = concatenate_datasets([T, V])
-    # retain_set = load_fineweb_cyber_corpus()
-    raise NotImplementedError("Cyber dataset not implemented yet")
+
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
+    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
+    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    # optionally we could try retain set instead
+    control_batches = training_batches
+
+    retain_set = load_fineweb_tech_corpus()
+    _txts = retain_set.shuffle(seed=42).batch(cfg.batch_size)
+    retain_batches = [
+        tokenizer(x["text"], **cfg.tokenizer)
+        for x in _txts.select(range(len(training_batches)))
+    ]
 
 elif cfg.dataset == "wmdp_bio_deebs":
     T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
@@ -124,9 +135,38 @@ elif cfg.dataset == "wmdp_bio_deebs":
         for x in _txts.select(range(len(training_batches)))
     ]
 
-
 elif cfg.dataset == "wmdp_cyber_deebs":
-    raise NotImplementedError("Cyber dataset not implemented yet")
+    T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
+    T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    print(f"{len(T)=}, {len(V)=}")
+    deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
+
+    t_questions = set(T["question"])
+    v_questions = set(V["question"])
+    t_texts = deebs_corpus.filter(lambda x: x["original_question"] in t_questions)
+    v_texts = deebs_corpus.filter(lambda x: x["original_question"] in v_questions)
+    t_and_v_texts = concatenate_datasets([t_texts, v_texts])
+
+    training_batches = [
+        tokenizer(texts, **cfg.tokenizer)
+        for texts in t_and_v_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
+    ]
+    retraining_batches = [
+        tokenizer(texts, **cfg.tokenizer)
+        for texts in t_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
+    ]
+    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    # optionally we could try retain set instead
+    control_batches = training_batches
+
+    retain_set = load_fineweb_tech_corpus()
+    _txts = retain_set.shuffle(seed=42).batch(cfg.batch_size)
+    retain_batches = [
+        tokenizer(x["text"], **cfg.tokenizer)
+        for x in _txts.select(range(len(training_batches)))
+    ]
 
 elif cfg.dataset == "jigsaw_threats":
     jigsaw = load_jigsaw_dataset()
@@ -198,14 +238,19 @@ for ex in V:
     print(acc)
 
 # %%
+# script name -> project
+# config name & hash -> group
+# experiment number -> name
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-run_name = "_".join(str(v) for v in exp_cfg.values())
 group = args.config_name + "_" + get_conf_hash(args.config_name)
+# remove experiment_number from remaining_args
+remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
+run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
 wandb.init(
     project=project_name,
-    name=run_name,
     group=group,
+    name=run_name,
     config=OmegaConf.to_container(exp_cfg)
 )
 
@@ -315,8 +360,8 @@ if "retraining_epochs" not in cfg:
 
 wandb.init(
     project="ret_" + project_name,
-    name=run_name,
     group=group,
+    name=run_name,
     config=OmegaConf.to_container(exp_cfg),
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)

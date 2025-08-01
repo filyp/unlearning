@@ -24,4 +24,7 @@ source .venv/bin/activate
 # srun ls -al
 # srun nvidia-smi
 
-srun python src/experiments/3.2_cir_dyna.py
+srun $1
+
+# run as:
+# sbatch unlearning/example_job.sh "python src/main_runner.py --config-name=datasets experiment_number=0 dataset=wmdp_bio"

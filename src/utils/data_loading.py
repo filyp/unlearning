@@ -43,6 +43,17 @@ def load_fineweb_bio_corpus():
     return corpus.select(range(2_500))
 
 
+def load_fineweb_tech_corpus():
+    corpus = load_dataset(
+        "m-a-p/FineFineWeb",
+        split="train",
+        data_files=[
+            "computer_science_and_technology/computer_science_and_technology_000000.jsonl"
+        ],
+    )
+    return corpus.select(range(2_500))
+
+
 # def load_filtered_mmlu_dataset():
 #     # %% prepare filtered mmlu dataset
 #     mmlu_dataset = load_dataset("cais/mmlu", "all", split="validation")

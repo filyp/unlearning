@@ -1,13 +1,13 @@
 # Datasets comparison
 
 ```bash
-git checkout 
+git checkout f3955eaf46fe033fed75a9c2b67602ac3d856df0
 
-python src/main_runner.py --config-name=datasets1 experiment_number=0
-python src/main_runner.py --config-name=datasets1 experiment_number=1
-python src/main_runner.py --config-name=datasets1 experiment_number=2
-python src/main_runner.py --config-name=datasets1 experiment_number=3
+python src/main_runner.py --config-name=datasets experiment_number=0 dataset=wmdp_bio
+python src/main_runner.py --config-name=datasets experiment_number=1 dataset=wmdp_bio
+python src/main_runner.py --config-name=datasets experiment_number=2 dataset=wmdp_bio
+python src/main_runner.py --config-name=datasets experiment_number=3 dataset=wmdp_bio
+python src/main_runner.py --config-name=datasets experiment_number=1 dataset=wmdp_bio_deebs
+python src/main_runner.py --config-name=datasets experiment_number=3 dataset=wmdp_bio_deebs
 
-python src/main_runner.py --config-name=datasets2 experiment_number=0
-python src/main_runner.py --config-name=datasets2 experiment_number=1
 ```
