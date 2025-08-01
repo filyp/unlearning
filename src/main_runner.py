@@ -10,14 +10,16 @@
 #     also, cleaner logic, if we first do one dummy epoch, gathering, and only then the main loop starts
 #     every n epochs, would enable using a different cotnrol set, which is needed for tendency unlearning
 
+import argparse
 import logging
 import time
 from pathlib import Path
 
+import hydra
 import matplotlib.pyplot as plt
 import torch as pt
 from datasets import Dataset, concatenate_datasets, load_dataset
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer
 
 import wandb
@@ -25,7 +27,7 @@ from utils import loss_fns
 from utils.common_cir import *
 from utils.data_loading import *
 from utils.evals import eval_on
-from utils.git_and_reproducibility import repo_root
+from utils.git_and_reproducibility import get_conf_hash, repo_root
 from utils.loss_fns import cross_entropy
 from utils.training import get_update_norm, set_seeds, trainable_modules
 
@@ -33,24 +35,33 @@ from utils.training import get_update_norm, set_seeds, trainable_modules
 plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
-conf = OmegaConf.load(repo_root() / "configs/cir.yaml")
-rconf = conf.experiment_list[conf.experiment_number]
+
+# Parse just the config-name, let Hydra handle the rest
+parser = argparse.ArgumentParser()
+parser.add_argument("--config-name", default="cir")
+args, remaining_args = parser.parse_known_args()
+
+with hydra.initialize(config_path="../configs", version_base="1.2"):
+    cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
+
+exp_cfg = cfg.experiment_list[cfg.experiment_number]
+
 
 # ! setup
 set_seeds(42)
 pt.set_default_device("cuda")
-tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
+tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 
 # ! load wikitext batches
 wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
-_txts = wikitext.shuffle(seed=42).batch(conf.batch_size)
+_txts = wikitext.shuffle(seed=42).batch(cfg.batch_size)
 wikitext_batches = [
-    tokenizer(x["text"], **conf.tokenizer) for x in _txts.select(range(16))
+    tokenizer(x["text"], **cfg.tokenizer) for x in _txts.select(range(16))
 ]
 
 # ! load proper datasets
-if conf.dataset == "wmdp_bio":
+if cfg.dataset == "wmdp_bio":
     T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
@@ -58,19 +69,19 @@ if conf.dataset == "wmdp_bio":
     print(f"{len(T)=}, {len(V)=}")
     T_and_V = concatenate_datasets([T, V])
 
-    training_batches = load_batches_from_pairs_set(T_and_V, conf, range(0, 3))
-    retraining_batches = load_batches_from_pairs_set(T, conf, range(0, 3))
-    loss_eval_batches = load_batches_from_pairs_set(V, conf, range(7, 10))
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
+    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
+    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
     retain_set = load_fineweb_bio_corpus()
-    _txts = retain_set.shuffle(seed=42).batch(conf.batch_size)
+    _txts = retain_set.shuffle(seed=42).batch(cfg.batch_size)
     retain_batches = [
-        tokenizer(x["text"], **conf.tokenizer)
+        tokenizer(x["text"], **cfg.tokenizer)
         for x in _txts.select(range(len(training_batches)))
     ]
-elif conf.dataset == "wmdp_cyber":
+elif cfg.dataset == "wmdp_cyber":
     T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
@@ -80,7 +91,7 @@ elif conf.dataset == "wmdp_cyber":
     # retain_set = load_fineweb_cyber_corpus()
     raise NotImplementedError("Cyber dataset not implemented yet")
 
-elif conf.dataset == "wmdp_bio_deebs":
+elif cfg.dataset == "wmdp_bio_deebs":
     T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
@@ -95,29 +106,29 @@ elif conf.dataset == "wmdp_bio_deebs":
     t_and_v_texts = concatenate_datasets([t_texts, v_texts])
 
     training_batches = [
-        tokenizer(texts, **conf.tokenizer)
-        for texts in t_and_v_texts.shuffle(seed=42).batch(conf.batch_size)["text"]
+        tokenizer(texts, **cfg.tokenizer)
+        for texts in t_and_v_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
     ]
     retraining_batches = [
-        tokenizer(texts, **conf.tokenizer)
-        for texts in t_texts.shuffle(seed=42).batch(conf.batch_size)["text"]
+        tokenizer(texts, **cfg.tokenizer)
+        for texts in t_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
     ]
-    loss_eval_batches = load_batches_from_pairs_set(V, conf, range(7, 10))
+    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
     retain_set = load_fineweb_bio_corpus()
-    _txts = retain_set.shuffle(seed=42).batch(conf.batch_size)
+    _txts = retain_set.shuffle(seed=42).batch(cfg.batch_size)
     retain_batches = [
-        tokenizer(x["text"], **conf.tokenizer)
+        tokenizer(x["text"], **cfg.tokenizer)
         for x in _txts.select(range(len(training_batches)))
     ]
 
 
-elif conf.dataset == "wmdp_cyber_deebs":
+elif cfg.dataset == "wmdp_cyber_deebs":
     raise NotImplementedError("Cyber dataset not implemented yet")
 
-elif conf.dataset == "jigsaw_threats":
+elif cfg.dataset == "jigsaw_threats":
     jigsaw = load_jigsaw_dataset()
     jigsaw_threats = jigsaw[jigsaw["threat"] == 1]
     jigsaw_benign = jigsaw[jigsaw["toxic"] == 0]
@@ -143,7 +154,7 @@ def get_metrics(model):
     res["wikitext_loss"] /= len(wikitext_batches)
 
     # ! eval forget acc
-    if "wmdp" in conf.dataset:
+    if "wmdp" in cfg.dataset:
         res["forget_acc"] = eval_on(V, model, temperature=1)
 
         # eval forget loss - this one is rather optional
@@ -167,19 +178,19 @@ def get_metrics(model):
 
 # * load model
 model = AutoModelForCausalLM.from_pretrained(
-    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+    cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 model.config.use_cache = False
 
 # * set trainable params
 for n, p in model.named_parameters():
-    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+    p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
 install_hooks(model)
 
-optimizer = pt.optim.SGD(model.parameters(), lr=rconf.unlearning_rate)
-if "retaining_rate" in rconf:
-    retain_optimizer = pt.optim.SGD(model.parameters(), lr=rconf.retaining_rate)
+optimizer = pt.optim.SGD(model.parameters(), lr=exp_cfg.unlearning_rate)
+if "retaining_rate" in exp_cfg:
+    retain_optimizer = pt.optim.SGD(model.parameters(), lr=exp_cfg.retaining_rate)
 
 # inspect per question acc
 for ex in V:
@@ -189,25 +200,26 @@ for ex in V:
 # %%
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-run_name = "_".join(str(v) for v in rconf.values())
+run_name = "_".join(str(v) for v in exp_cfg.values())
+group = args.config_name + "_" + get_conf_hash(args.config_name)
 wandb.init(
     project=project_name,
     name=run_name,
-    group=conf.dataset + "_" + conf.model_id,
-    config=OmegaConf.to_container(rconf),
+    group=group,
+    config=OmegaConf.to_container(exp_cfg)
 )
 
 initial_res = get_metrics(model)
 wandb.log(initial_res)
-assert rconf.algorithm in ["CIR", "GA"]
+assert exp_cfg.algorithm in ["CIR", "GA"]
 
 # % full training loop
 start_time = time.time()
-for epoch in range(conf.max_num_epochs):
+for epoch in range(cfg.max_num_epochs):
     pt.cuda.empty_cache()
 
     # ! recalculate projections
-    if epoch % rconf.recalc_every_n_epochs == 0 and rconf.algorithm == "CIR":
+    if epoch % exp_cfg.recalc_every_n_epochs == 0 and exp_cfg.algorithm == "CIR":
         acts_list = {n: [] for n, _ in trainable_modules(model)}
         grads_list = {n: [] for n, _ in trainable_modules(model)}
 
@@ -215,8 +227,8 @@ for epoch in range(conf.max_num_epochs):
             # ! unlearning loss
             model.zero_grad(set_to_none=True)
             output = model(**batch)
-            loss_fn = getattr(loss_fns, rconf.loss_fn_name)
-            answer_mask = batch["answer_mask"] if rconf.only_train_on_answer else None
+            loss_fn = getattr(loss_fns, exp_cfg.loss_fn_name)
+            answer_mask = batch["answer_mask"] if exp_cfg.only_train_on_answer else None
             loss = loss_fn(output, batch, answer_mask)
             loss.backward()
 
@@ -230,29 +242,28 @@ for epoch in range(conf.max_num_epochs):
         act_to_collapse = get_projections(acts_list, num_pc=10)
         grad_to_collapse = get_projections(grads_list, num_pc=10)
 
-
     # ! one epoch
     model.train()
     for i, batch in enumerate(training_batches):
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
         output = model(**batch)
-        loss_fn = getattr(loss_fns, rconf.loss_fn_name)
-        answer_mask = batch["answer_mask"] if rconf.only_train_on_answer else None
+        loss_fn = getattr(loss_fns, exp_cfg.loss_fn_name)
+        answer_mask = batch["answer_mask"] if exp_cfg.only_train_on_answer else None
         loss = loss_fn(output, batch, answer_mask)
         loss.backward()
 
         # ! here we modify the grad
-        if rconf.algorithm == "CIR":
+        if exp_cfg.algorithm == "CIR":
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"])
                 grads = get_last_grad(m, batch["attention_mask"])
                 assert len(acts.shape) == len(grads.shape) == 2
 
                 # ! proj out the means and PCA components
-                for comp in act_to_collapse[n][: rconf.act_num_proj]:
+                for comp in act_to_collapse[n][: exp_cfg.act_num_proj]:
                     acts -= project_out(acts, comp)
-                for comp in grad_to_collapse[n][: rconf.grad_num_proj]:
+                for comp in grad_to_collapse[n][: exp_cfg.grad_num_proj]:
                     grads -= project_out(grads, comp)
 
                 # without the projections, this is the equivalent of normal backprop
@@ -260,7 +271,7 @@ for epoch in range(conf.max_num_epochs):
                 assert m.weight.grad.shape == m.weight.shape
 
         # ! normalize grads
-        if conf.normalize:
+        if cfg.normalize:
             update_norm = get_update_norm(model)
             if "max_norm" not in globals():
                 max_norm = update_norm
@@ -273,7 +284,7 @@ for epoch in range(conf.max_num_epochs):
 
         optimizer.step()
 
-        if "retaining_rate" in rconf:
+        if "retaining_rate" in exp_cfg:
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch)
@@ -298,18 +309,19 @@ for ex in V:
 
 # %% retraining on T
 
-exit(0)
+if "retraining_epochs" not in cfg:
+    exit(0)
 
 
 wandb.init(
     project="ret_" + project_name,
     name=run_name,
-    group=conf.dataset + "_" + conf.model_id,
-    config=OmegaConf.to_container(rconf),
+    group=group,
+    config=OmegaConf.to_container(exp_cfg),
 )
-optimizer = pt.optim.SGD(model.parameters(), lr=conf.retraining_rate)
+optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 
-for epoch in range(conf.retraining_epochs):
+for epoch in range(cfg.retraining_epochs):
     model.train()
     for batch in retraining_batches:
         model.zero_grad(set_to_none=True)
@@ -322,5 +334,4 @@ for epoch in range(conf.retraining_epochs):
     res = get_metrics(model)
     wandb.log(res)
 
-wandb.finish()
 wandb.finish()

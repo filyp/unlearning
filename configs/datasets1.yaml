@@ -5,9 +5,6 @@ dataset: wmdp_bio
 batch_size: 8
 normalize: true
 
-retraining_rate: 1e-6
-retraining_epochs: 10
-
 max_num_epochs: 50
 tokenizer:
     max_length: 128
@@ -21,6 +18,7 @@ target_modules:
 
 experiment_number: ???
 experiment_list:
+
     - algorithm: CIR
       act_num_proj: 7
       grad_num_proj: 7
@@ -29,21 +27,22 @@ experiment_list:
       unlearning_rate: 1e-3
       recalc_every_n_epochs: 3
 
-    - algorithm: GA
-      loss_fn_name: neg_cross_entropy
-      only_train_on_answer: true
-      unlearning_rate: 1e-6
+    - algorithm: CIR
+      act_num_proj: 7
+      grad_num_proj: 7
+      loss_fn_name: correct_logit
+      only_train_on_answer: false
+      unlearning_rate: 1e-3
       recalc_every_n_epochs: 3
 
     - algorithm: GA
       loss_fn_name: neg_cross_entropy
       only_train_on_answer: true
-      unlearning_rate: 4e-7
-      retaining_rate: 1e-6
+      unlearning_rate: 3e-6
       recalc_every_n_epochs: 3
 
-# experiments to do:
-# first plot with CIR, GA and GA with handicap
-# MAML vs no MAML
-# wmdp on my dataset with only_train_on_answer vs without vs Deeb's corpus
-# * CIR ablation study + loss fns compariso
+    - algorithm: GA
+      loss_fn_name: neg_cross_entropy
+      only_train_on_answer: false
+      unlearning_rate: 3e-6
+      recalc_every_n_epochs: 3
