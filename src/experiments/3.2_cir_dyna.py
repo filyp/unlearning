@@ -61,8 +61,8 @@ if conf.dataset == "wmdp_bio":
     # V = V.filter(lambda x: len(x["answer_core"]) <= 40)
     T_and_V = concatenate_datasets([T, V])
 
-    training_batches = load_batches_from_pairs_set(T_and_V, conf, range(0, 7))
-    retraining_batches = load_batches_from_pairs_set(T, conf, range(0, 7))
+    training_batches = load_batches_from_pairs_set(T_and_V, conf, range(0, 3))
+    retraining_batches = load_batches_from_pairs_set(T, conf, range(0, 3))
     loss_eval_batches = load_batches_from_pairs_set(V, conf, range(7, 10))
     # todo optionally we could try retain set instead
     control_batches = training_batches
@@ -82,6 +82,22 @@ elif conf.dataset == "wmdp_cyber":
     T_and_V = concatenate_datasets([T, V])
     # retain_set = load_fineweb_cyber_corpus()
     raise NotImplementedError("Cyber dataset not implemented yet")
+
+elif conf.dataset == "wmdp_bio_deebs":
+    T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
+    T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    print(f"{len(T)=}, {len(V)=}")
+    deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
+
+    t_questions = set(T["question"])
+    t_texts = deebs_corpus.filter(lambda x: x["original_question"] in t_questions)
+    len(t_texts)
+
+elif conf.dataset == "wmdp_cyber_deebs":
+    raise NotImplementedError("Cyber dataset not implemented yet")
+
 elif conf.dataset == "jigsaw_threats":
     jigsaw = load_jigsaw_dataset()
     jigsaw_threats = jigsaw[jigsaw["threat"] == 1]
@@ -93,7 +109,8 @@ elif conf.dataset == "jigsaw_threats":
     retain_set = jigsaw_benign  # format batches properly
 
 # %%
-deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
+# %%
+
 # %%
 
 
