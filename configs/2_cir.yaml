@@ -21,11 +21,13 @@ target_modules:
 
 experiment_number: 0
 experiment_list:
-    - algorithm: CIRdyna
-      num_pc: 6
+    - algorithm: CIR
+      act_num_proj: 7
+      grad_num_proj: 7
       loss_fn_name: correct_logit
       only_train_on_answer: true
-      unlearning_rate: 3e-4
+      unlearning_rate: 1e-3
+      recalc_every_n_epochs: 3
 
     - algorithm: GA
       loss_fn_name: neg_cross_entropy

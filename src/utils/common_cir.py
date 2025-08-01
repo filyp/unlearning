@@ -23,34 +23,10 @@ def save_grad_hook(module, args):
     module.last_grad_full = args[0].detach().clone()
 
 
-def prepare_model(conf, use_every_n_layers=None):
-    # * load model
-    model = AutoModelForCausalLM.from_pretrained(
-        conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
-    )
-    model.config.use_cache = False
-
-    # * set trainable params
-    for n, p in model.named_parameters():
-        p.requires_grad = any(pattern in n for pattern in conf.target_modules)
-
-        # * limit which layers are trained
-        if ".layers." in n:
-            layer_num = int(n.split(".")[2])
-            # # * freeze early layers
-            # if layer_num < 16:
-            # p.requires_grad = False
-            # * use only every some layers to save memory
-            if use_every_n_layers is not None:
-                if layer_num % use_every_n_layers != 0:
-                    p.requires_grad = False
-
-    # * register hooks
+def install_hooks(model):
     for n, module in trainable_modules(model):
         module.register_forward_pre_hook(save_act_hook)
         module.register_full_backward_pre_hook(save_grad_hook)
-
-    return model
 
 
 def get_last_act(module, attn_mask):
@@ -67,49 +43,67 @@ def get_last_grad(module, attn_mask):
     return grad[final_mask]
 
 
+def get_projections(vector_lists: dict[str, list[pt.Tensor]], num_pc=10, niter=16):
+    # vectors can be either acts or grads
+    to_collapse = {}
+    for n in list(vector_lists.keys()):
+        pt.cuda.empty_cache()
+        vectors_flattened = pt.cat(vector_lists.pop(n)).to("cuda").float()
+        mean = vectors_flattened.mean(axis=0)
+
+        _, S, V = pt.pca_lowrank(vectors_flattened, num_pc, niter=niter)
+        pca_components = V.T
+
+        # to collapse is one tensor of mean and the pca components
+        to_collapse[n] = pt.cat([mean.reshape(1, -1), pca_components], dim=0)
+
+    return to_collapse
+
+
 # but it doesn't have batches, but it needs to be done only once, so maybe not important to optimize it
-def get_act_principal_components(model, batches, num_pc=10, niter=16):
-    # maybe deprecate this in favor of get_projections
-    # ! gather acts
-    acts_list = {n: [] for n, _ in trainable_modules(model)}
+# def get_act_principal_components(model, batches, num_pc=10, niter=16):
+#     # maybe deprecate this in favor of get_projections
+#     # ! gather acts
+#     acts_list = {n: [] for n, _ in trainable_modules(model)}
 
-    for batch in batches:
-        with pt.no_grad():
-            model(**batch)
-        for n, module in trainable_modules(model):
-            acts_list[n].append(get_last_act(module, batch["attention_mask"]).to("cpu"))
+#     for batch in batches:
+#         with pt.no_grad():
+#             model(**batch)
+#         for n, module in trainable_modules(model):
+#             acts_list[n].append(get_last_act(module, batch["attention_mask"]).to("cpu"))
 
-    # ! calculate projection basis
-    act_means = {}
-    act_pca_components = {}
-    for n, _ in trainable_modules(model):
-        pt.cuda.empty_cache()
-        acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
-        act_means[n] = acts_flattened.mean(axis=0)
-        # ! calculate act PCA
-        # if exact_pca:
-            # #  note: it seems to leak memory!!
-            # act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
-        _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
-        act_pca_components[n] = V.T
+#     # ! calculate projection basis
+#     act_means = {}
+#     act_pca_components = {}
+#     for n, _ in trainable_modules(model):
+#         pt.cuda.empty_cache()
+#         acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
+#         act_means[n] = acts_flattened.mean(axis=0)
+#         # ! calculate act PCA
+#         # if exact_pca:
+#             # #  note: it seems to leak memory!!
+#             # act_pca_components[n] = PCA_gpu(acts_flattened, n_components=num_pc)
+#         _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
+#         act_pca_components[n] = V.T
 
-    return act_means, act_pca_components
+#     return act_means, act_pca_components
 
 
-def get_projections(acts_list, grads_list, num_pc=10, niter=16):
-    act_means = {}
-    grads_means = {}
-    act_pca_components = {}
-    for n in list(acts_list.keys()):
-        pt.cuda.empty_cache()
-        acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
-        act_means[n] = acts_flattened.mean(axis=0)
-        grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
-        grads_means[n] = grads_flattened.mean(axis=0)
-        _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=16)
-        act_pca_components[n] = V.T
+# def get_projections(acts_list, grads_list, num_pc=10, niter=16):
+#     act_means = {}
+#     grads_means = {}
+#     act_pca_components = {}
+#     for n in list(acts_list.keys()):
+#         pt.cuda.empty_cache()
+#         acts_flattened = pt.cat(acts_list.pop(n)).to("cuda").float()
+#         act_means[n] = acts_flattened.mean(axis=0)
+#         grads_flattened = pt.cat(grads_list.pop(n)).to("cuda").float()
+#         grads_means[n] = grads_flattened.mean(axis=0)
+#         _, S, V = pt.pca_lowrank(acts_flattened, num_pc, niter=niter)
+#         act_pca_components[n] = V.T
 
-    return act_means, grads_means, act_pca_components
+#     return act_means, grads_means, act_pca_components
+
 
 # # for comparing similarity of full and approximate PCA
 # ref = list(act_pca_components.values())[0]
@@ -156,3 +150,14 @@ def get_projections(acts_list, grads_list, num_pc=10, niter=16):
 #     for n, module in trainable_modules(model):
 #         acts_list[n].append(get_last_act(module, batch["attention_mask"]))
 #         # grads_list[n].append(get_last_act(module, batch["attention_mask"]))
+
+# # * limit which layers are trained
+# if ".layers." in n:
+#     layer_num = int(n.split(".")[2])
+#     # # * freeze early layers
+#     # if layer_num < 16:
+#     # p.requires_grad = False
+#     # * use only every some layers to save memory
+#     if use_every_n_layers is not None:
+#         if layer_num % use_every_n_layers != 0:
+#             p.requires_grad = False

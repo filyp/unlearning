@@ -5,6 +5,11 @@
 #     and context undisruption (a more fancy retaining technique)
 # but here, we aim for more simlicity and dataset generality
 
+# todo implement a *class* for collecting acts, projs, calculating pca, and storing them!
+# maybe just recalculate projs once every n epochs?
+#     also, cleaner logic, if we first do one dummy epoch, gathering, and only then the main loop starts
+#     every n epochs, would enable using a different cotnrol set, which is needed for tendency unlearning
+
 import logging
 import time
 from pathlib import Path
@@ -29,7 +34,7 @@ plt.style.use("dark_background")
 
 logging.basicConfig(level=logging.INFO)
 conf = OmegaConf.load(repo_root() / "configs/2_cir.yaml")
-run_conf = conf.experiment_list[conf.experiment_number]
+rconf = conf.experiment_list[conf.experiment_number]
 
 # ! setup
 set_seeds(42)
@@ -50,6 +55,8 @@ if conf.dataset == "wmdp_bio":
     V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    print(f"{len(T)=}, {len(V)=}")
+    # todo, limit again to 40, reenable and test
     # T = T.filter(lambda x: len(x["answer_core"]) <= 40)
     # V = V.filter(lambda x: len(x["answer_core"]) <= 40)
     T_and_V = concatenate_datasets([T, V])
@@ -69,6 +76,9 @@ if conf.dataset == "wmdp_bio":
 elif conf.dataset == "wmdp_cyber":
     T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
+    T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+    print(f"{len(T)=}, {len(V)=}")
     T_and_V = concatenate_datasets([T, V])
     # retain_set = load_fineweb_cyber_corpus()
     raise NotImplementedError("Cyber dataset not implemented yet")
@@ -81,6 +91,10 @@ elif conf.dataset == "jigsaw_threats":
     # but it's still nice to do
     raise NotImplementedError("Jigsaw dataset not implemented yet")
     retain_set = jigsaw_benign  # format batches properly
+
+# %%
+deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
+# %%
 
 
 def get_metrics(model):
@@ -118,12 +132,21 @@ def get_metrics(model):
 
 # %%
 
-# ! pass through control corpus, to collect acts
-model = prepare_model(conf)
+# * load model
+model = AutoModelForCausalLM.from_pretrained(
+    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+)
+model.config.use_cache = False
 
-optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.unlearning_rate)
-if "retaining_rate" in run_conf:
-    retain_optimizer = pt.optim.SGD(model.parameters(), lr=run_conf.retaining_rate)
+# * set trainable params
+for n, p in model.named_parameters():
+    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+install_hooks(model)
+
+optimizer = pt.optim.SGD(model.parameters(), lr=rconf.unlearning_rate)
+if "retaining_rate" in rconf:
+    retain_optimizer = pt.optim.SGD(model.parameters(), lr=rconf.retaining_rate)
 
 # inspect per question acc
 for ex in V:
@@ -133,26 +156,47 @@ for ex in V:
 # %%
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-run_name = "_".join(str(v) for v in run_conf.values())
+run_name = "_".join(str(v) for v in rconf.values())
 wandb.init(
     project=project_name,
     name=run_name,
     group=conf.dataset + "_" + conf.model_id,
-    config=OmegaConf.to_container(run_conf),
+    config=OmegaConf.to_container(rconf),
 )
 
 initial_res = get_metrics(model)
 wandb.log(initial_res)
-assert run_conf.algorithm in ["CIRdyna", "CIRdynaG", "GA"]
+assert rconf.algorithm in ["CIR", "GA"]
 
 # % full training loop
 start_time = time.time()
 for epoch in range(conf.max_num_epochs):
     pt.cuda.empty_cache()
 
-    # note: this implementation reuses the normal epoch, so only works if control_batches=training_batches
-    acts_list = {n: [] for n, _ in trainable_modules(model)}
-    grads_list = {n: [] for n, _ in trainable_modules(model)}
+    # ! recalculate projections
+    if epoch % rconf.recalc_every_n_epochs == 0 and rconf.algorithm == "CIR":
+        acts_list = {n: [] for n, _ in trainable_modules(model)}
+        grads_list = {n: [] for n, _ in trainable_modules(model)}
+
+        for i, batch in enumerate(control_batches):
+            # ! unlearning loss
+            model.zero_grad(set_to_none=True)
+            output = model(**batch)
+            loss_fn = getattr(loss_fns, rconf.loss_fn_name)
+            answer_mask = batch["answer_mask"] if rconf.only_train_on_answer else None
+            loss = loss_fn(output, batch, answer_mask)
+            loss.backward()
+
+            for n, m in trainable_modules(model):
+                acts = get_last_act(m, batch["attention_mask"])
+                grads = get_last_grad(m, batch["attention_mask"])
+                acts_list[n].append(acts.to("cpu"))
+                grads_list[n].append(grads.to("cpu"))
+
+        # ! calculate means and PCA components
+        act_to_collapse = get_projections(acts_list, num_pc=10)
+        grad_to_collapse = get_projections(grads_list, num_pc=10)
+
 
     # ! one epoch
     model.train()
@@ -160,50 +204,43 @@ for epoch in range(conf.max_num_epochs):
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
         output = model(**batch)
-        loss_fn = getattr(loss_fns, run_conf.loss_fn_name)
-        answer_mask = batch["answer_mask"] if run_conf.only_train_on_answer else None
+        loss_fn = getattr(loss_fns, rconf.loss_fn_name)
+        answer_mask = batch["answer_mask"] if rconf.only_train_on_answer else None
         loss = loss_fn(output, batch, answer_mask)
         loss.backward()
 
         # ! here we modify the grad
-        if run_conf.algorithm in ["CIRdyna", "CIRdynaG"]:
+        if rconf.algorithm == "CIR":
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"])
                 grads = get_last_grad(m, batch["attention_mask"])
                 assert len(acts.shape) == len(grads.shape) == 2
-                acts_list[n].append(acts.to("cpu"))
-                grads_list[n].append(grads.to("cpu"))
-                if epoch == 0:
-                    continue
 
                 # ! proj out the means and PCA components
-                acts -= project_out(acts, act_means[n])
-                for comp in act_pca_components[n]:
+                for comp in act_to_collapse[n][: rconf.act_num_proj]:
                     acts -= project_out(acts, comp)
-                if run_conf.algorithm == "CIRdynaG":
-                    grads -= project_out(grads, grad_means[n])
+                for comp in grad_to_collapse[n][: rconf.grad_num_proj]:
+                    grads -= project_out(grads, comp)
 
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        if epoch == 0:
-            continue
-
         # ! normalize grads
-        update_norm = get_update_norm(model)
-        if "max_norm" not in globals():
-            max_norm = update_norm
-            print(f"max_norm: {max_norm:7.2f}")
-        print(f"{update_norm:3.0f} ", end="")
-        # normalize only if the update is larger than the initial update times X
-        if conf.normalize and update_norm > max_norm * 1:
-            for n, m in trainable_modules(model):
-                m.weight.grad *= max_norm / update_norm
+        if conf.normalize:
+            update_norm = get_update_norm(model)
+            if "max_norm" not in globals():
+                max_norm = update_norm
+                print(f"max_norm: {max_norm:7.2f}")
+            # print(f"update_norm: {update_norm:7.2f}")
+            # normalize only if the update is larger than the initial update times X
+            if update_norm > max_norm * 1:
+                for n, m in trainable_modules(model):
+                    m.weight.grad *= max_norm / update_norm
 
         optimizer.step()
 
-        if "retaining_rate" in run_conf:
+        if "retaining_rate" in rconf:
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch)
@@ -211,22 +248,14 @@ for epoch in range(conf.max_num_epochs):
             loss.backward()
             retain_optimizer.step()
 
-    if run_conf.algorithm in ["CIRdyna", "CIRdynaG"]:
-        # ! calculate act PCA
-        act_means, grad_means, act_pca_components = get_projections(
-            acts_list, grads_list, run_conf.num_pc
-        )
-
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
     if res["wikitext_loss"] > initial_res["wikitext_loss"] * 1.01:
         break
 
-
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
-
 
 # inspect per question acc
 for ex in V:
@@ -236,11 +265,14 @@ for ex in V:
 
 # %% retraining on T
 
+exit(0)
+
+
 wandb.init(
     project="ret_" + project_name,
     name=run_name,
     group=conf.dataset + "_" + conf.model_id,
-    config=OmegaConf.to_container(run_conf),
+    config=OmegaConf.to_container(rconf),
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=conf.retraining_rate)
 
