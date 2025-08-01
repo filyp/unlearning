@@ -143,7 +143,7 @@ def get_metrics(model):
     res["wikitext_loss"] /= len(wikitext_batches)
 
     # ! eval forget acc
-    if conf.dataset == "wmdp_bio" or conf.dataset == "wmdp_cyber":
+    if "wmdp" in conf.dataset:
         res["forget_acc"] = eval_on(V, model, temperature=1)
 
         # eval forget loss - this one is rather optional
