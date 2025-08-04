@@ -5,11 +5,6 @@
 #     and context undisruption (a more fancy retaining technique)
 # but here, we aim for more simlicity and dataset generality
 
-# todo implement a *class* for collecting acts, projs, calculating pca, and storing them!
-# maybe just recalculate projs once every n epochs?
-#     also, cleaner logic, if we first do one dummy epoch, gathering, and only then the main loop starts
-#     every n epochs, would enable using a different cotnrol set, which is needed for tendency unlearning
-
 import argparse
 import logging
 import time
@@ -43,6 +38,8 @@ args, remaining_args = parser.parse_known_args()
 
 with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
+# cfg = OmegaConf.load("../configs/datasets.yaml")
+
 
 exp_cfg = cfg.experiment_list[cfg.experiment_number]
 
@@ -68,10 +65,11 @@ if cfg.dataset == "wmdp_bio":
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
     T_and_V = concatenate_datasets([T, V])
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 
     training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
     retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
-    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
@@ -88,10 +86,11 @@ elif cfg.dataset == "wmdp_cyber":
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
     T_and_V = concatenate_datasets([T, V])
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 
     training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
     retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
-    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
@@ -108,6 +107,8 @@ elif cfg.dataset == "wmdp_bio_deebs":
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
+    T_and_V = concatenate_datasets([T, V])
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
 
     t_questions = set(T["question"])
@@ -124,7 +125,7 @@ elif cfg.dataset == "wmdp_bio_deebs":
         tokenizer(texts, **cfg.tokenizer)
         for texts in t_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
     ]
-    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
@@ -141,6 +142,8 @@ elif cfg.dataset == "wmdp_cyber_deebs":
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
+    T_and_V = concatenate_datasets([T, V])
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
 
     t_questions = set(T["question"])
@@ -157,7 +160,7 @@ elif cfg.dataset == "wmdp_cyber_deebs":
         tokenizer(texts, **cfg.tokenizer)
         for texts in t_texts.shuffle(seed=42).batch(cfg.batch_size)["text"]
     ]
-    loss_eval_batches = load_batches_from_pairs_set(V, cfg, range(7, 10))
+    loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
 
@@ -195,7 +198,7 @@ def get_metrics(model):
 
     # ! eval forget acc
     if "wmdp" in cfg.dataset:
-        res["forget_acc"] = eval_on(V, model, temperature=1)
+        res["forget_acc"] = eval_on(eval_qs, model, temperature=1)
 
         # eval forget loss - this one is rather optional
         res["forget_loss"] = 0
@@ -233,7 +236,7 @@ if "retaining_rate" in exp_cfg:
     retain_optimizer = pt.optim.SGD(model.parameters(), lr=exp_cfg.retaining_rate)
 
 # inspect per question acc
-for ex in V:
+for ex in eval_qs:
     acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
     print(acc)
 
@@ -347,7 +350,7 @@ wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
 
 # inspect per question acc
-for ex in V:
+for ex in eval_qs:
     acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
     print(acc)
 

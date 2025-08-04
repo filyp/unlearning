@@ -4,6 +4,7 @@ model_id: meta-llama/Llama-3.1-8B
 dataset: ???
 batch_size: 8
 normalize: true
+eval_on_all_questions: true
 
 max_num_epochs: 50
 tokenizer:
