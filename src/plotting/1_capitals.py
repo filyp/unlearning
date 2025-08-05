@@ -12,7 +12,7 @@ import torch as pt
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from utils.common_cir import prepare_model
+from utils.common_cir import *
 from utils.git_and_reproducibility import repo_root
 from utils.plots import visualize
 from utils.training import get_grad, prepare_answer_mask, set_seeds
@@ -37,7 +37,18 @@ tokenizer.pad_token = tokenizer.eos_token
 # * install hooks
 conf.target_modules = ["gate_proj", "up_proj", "down_proj", "k_proj", "v_proj", "q_proj", "o_proj"]  # fmt: skip
 conf.device = "cuda" if pt.cuda.is_available() else "cpu"
-model = prepare_model(conf)
+
+
+model = AutoModelForCausalLM.from_pretrained(
+    conf.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+)
+model.config.use_cache = False
+
+# * set trainable params
+for n, p in model.named_parameters():
+    p.requires_grad = any(pattern in n for pattern in conf.target_modules)
+
+install_hooks(model)
 
 
 def tensor_dict_dot_product(a, b):
@@ -463,7 +474,7 @@ create_plot(group_infos)
 # save
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}.pdf"
-plt.savefig(plot_path, bbox_inches="tight", dpi=300)
+plt.savefig(plot_path, bbox_inches=None, dpi=300)
 
 # %%
 group_infos = []
@@ -476,4 +487,4 @@ create_plot(group_infos)
 # save
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}_2.pdf"
-plt.savefig(plot_path, bbox_inches="tight", dpi=300)
+plt.savefig(plot_path, bbox_inches=None, dpi=300)

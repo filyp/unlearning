@@ -16,10 +16,14 @@ plt.rcParams["font.size"] = 10
 config_name = "datasets"
 project_name = "unlearning|src|main_runner.py"
 group = config_name + "_" + get_conf_hash(config_name)
+# h = "ac6bd2"
+# group = config_name + "_" + h
 
 # get all the runs of the project and this group
 runs = wandb.Api().runs(project_name, filters={"group": group})
 name_to_run = {run.name: run for run in runs}
+
+max_wikitext_loss = 2.91267 * 1.01
 
 # %%
 
@@ -74,6 +78,7 @@ cyber_ga_data = extract_run_data(cyber_ga_runs)
 
 # %%
 
+
 # Define colors based on dataset type
 def get_color(run_name):
     if "deebs" in run_name:
@@ -119,8 +124,8 @@ def plot_data(ax, data, run_names, y_metric, invert_y=False):
     # ax.set_xlabel("Wikitext Loss")
     # ax.set_ylabel(y_metric.replace("_", " ").title())
     ax.grid(True, alpha=0.3)
-    ax.tick_params(axis='y', rotation=90, labelsize=9)
-    ax.tick_params(axis='x', labelsize=9)
+    ax.tick_params(axis="y", rotation=90)
+    ax.tick_params(axis="x")
 
     if invert_y:
         ax.invert_yaxis()
@@ -149,8 +154,8 @@ axes[0, 2].set_title("CIR")
 axes[0, 3].set_title("GA")
 
 # Add group labels above the column titles
-fig.text(0.30, 0.97, "Forget Loss", ha='center', fontsize=10)
-fig.text(0.72, 0.97, "Forget Acc", ha='center', fontsize=10)
+fig.text(0.30, 0.97, "Forget Loss", ha="center", fontsize=10)
+fig.text(0.72, 0.97, "WMDP Accuracy", ha="center", fontsize=10)
 
 # Add row labels
 fig.text(
@@ -182,8 +187,10 @@ for row in range(2):
     ga_ylim = axes[row, 1].get_ylim()
 
     # Set common limits for forget_loss plots
-    common_xlim = (min(cir_xlim[0], ga_xlim[0]), max(cir_xlim[1], ga_xlim[1]))
-    common_ylim = (min(cir_ylim[0], ga_ylim[0]), max(cir_ylim[1], ga_ylim[1]))
+    common_xlim = (min(cir_xlim[0], ga_xlim[0]), max_wikitext_loss) 
+     # max(cir_xlim[1], ga_xlim[1]))
+    # common_ylim = (min(cir_ylim[0], ga_ylim[0]), max(cir_ylim[1], ga_ylim[1]))
+    common_ylim = (min(cir_ylim[0], ga_ylim[0]), 13)
 
     axes[row, 0].set_xlim(common_xlim)
     axes[row, 0].set_ylim(common_ylim)
@@ -197,10 +204,13 @@ for row in range(2):
     ga_ylim = axes[row, 3].get_ylim()
 
     # Set common limits for forget_acc plots
-    common_xlim = (min(cir_xlim[0], ga_xlim[0]), max(cir_xlim[1], ga_xlim[1]))
+    common_xlim = (min(cir_xlim[0], ga_xlim[0]), max_wikitext_loss)
+    # max(cir_xlim[1], ga_xlim[1]))
     # Calculate the actual min and max values
-    y_min = min(cir_ylim[0], cir_ylim[1], ga_ylim[0], ga_ylim[1])
-    y_max = max(cir_ylim[0], cir_ylim[1], ga_ylim[0], ga_ylim[1])
+    # y_min = min(cir_ylim[0], cir_ylim[1], ga_ylim[0], ga_ylim[1])
+    # y_max = max(cir_ylim[0], cir_ylim[1], ga_ylim[0], ga_ylim[1])
+    y_min = 0.4
+    y_max = 0.65
 
     axes[row, 2].set_xlim(common_xlim)
     axes[row, 2].set_ylim(y_max, y_min)  # Set max first for inverted axis
@@ -227,6 +237,7 @@ fig.legend(
     loc="lower center",
     # ncol=3,
     # bbox_to_anchor=(0.5, -0.05),
+    fontsize=10,
 )
 
 # plt.tight_layout()
@@ -236,6 +247,6 @@ plt.subplots_adjust(bottom=0.32, hspace=0.3, wspace=0.42)
 
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}.pdf"
-plt.savefig(plot_path, bbox_inches="tight", dpi=300)
+plt.savefig(plot_path, bbox_inches=None, dpi=300)
 
 # %%

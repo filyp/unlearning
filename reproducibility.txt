@@ -1,7 +1,7 @@
 # Datasets comparison
 
 ```bash
-git checkout 6ab637212fc35e99f64d7b74ebdae8cb43ae0990
+git checkout afa10656b06120731ba68d1e023d4a8d5310abbf
 
 python src/main_runner.py --config-name=datasets experiment_number=0 dataset=wmdp_bio
 python src/main_runner.py --config-name=datasets experiment_number=1 dataset=wmdp_bio
