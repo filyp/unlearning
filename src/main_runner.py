@@ -67,8 +67,9 @@ if cfg.dataset == "wmdp_bio":
     T_and_V = concatenate_datasets([T, V])
     eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 
-    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
-    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
+    # note: dataset comparison experiment uses 3, not 7
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 7))
+    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 7))
     loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
@@ -88,8 +89,9 @@ elif cfg.dataset == "wmdp_cyber":
     T_and_V = concatenate_datasets([T, V])
     eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 
-    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 3))
-    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 3))
+    # note: dataset comparison experiment uses 3, not 7
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 7))
+    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 7))
     loss_eval_batches = load_batches_from_pairs_set(eval_qs, cfg, range(7, 10))
     # optionally we could try retain set instead
     control_batches = training_batches
