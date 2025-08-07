@@ -13,6 +13,11 @@ import torch as pt
 # new_target_probs = pt.stack(new_target_probs)
 
 
+def normalize_logits(logits):
+    """Shift the raw logits to make them logs of probabilities summing to one."""
+    return logits - logits.exp().sum(dim=-1, keepdim=True).log()
+
+
 def cross_entropy(output, batch, answer_mask=None):
     shifted_logits = output.logits[:, :-1, :].float()
     shifted_ids = batch["input_ids"][:, 1:]

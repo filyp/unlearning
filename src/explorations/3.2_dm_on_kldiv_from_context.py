@@ -245,7 +245,7 @@ if "retaining_rate" in exp_cfg:
 # * cache the activations for context undisruption
 if exp_cfg.get("kl_ratio_thresh") is not None:
     model.train()
-    for batch in retain_batches:
+    for batch in control_batches:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
         batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
@@ -268,7 +268,7 @@ wandb.init(
 )
 
 initial_res = get_metrics(model)
-wandb.log(initial_res)
+wandb.log(initial_res | {"kl_div": 0})
 assert exp_cfg.algorithm in ["CIR", "GA"]
 
 # % full training loop
@@ -302,11 +302,43 @@ for epoch in range(cfg.max_num_epochs):
 
     # ! one epoch
     model.train()
+    _kl_div_acc = 0
     for i, batch in enumerate(training_batches):
-
-        # ! unlearning loss
         model.zero_grad(set_to_none=True)
         output = model(**batch, output_hidden_states=True)
+
+        if exp_cfg.get("kl_ratio_thresh") is not None:
+            assert exp_cfg.only_train_on_answer
+            # ! compute context disruption
+            # output = model(**batch, output_hidden_states=True)  # already calculated
+            cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+            original_last_act = batch["original_last_act"].to("cuda")[cntxt_mask]
+            # we store acts and recalculate logits to save memory
+            original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
+            logits = output.logits[cntxt_mask]
+            original_logits = normalize_logits(original_logits.float())
+            logits = normalize_logits(logits.float())
+
+            # calculate KL divergence between original and current logits
+            kl_div = F.kl_div(
+                logits, original_logits, reduction="batchmean", log_target=True
+            )
+            assert kl_div > 0
+            _kl_div_acc += kl_div.item()
+            # this kl_div calculation is the same as:
+            # (original_logits.exp() * (original_logits - logits)).sum(dim=-1).mean()
+
+            # note that retain_graph is only possible if we don't update the weights
+            kl_div.backward(retain_graph=True)
+
+            for n, m in trainable_modules(model):
+                m.kl_div_grad = get_last_grad(m, batch["attention_mask"])
+
+            # last_act = output.hidden_states[-1][cntxt_mask]
+            # diff = last_act - original_last_act
+            # context_disruption = diff.norm(dim=-1).mean()
+
+        # ! unlearning loss
         loss_fn = getattr(loss_fns, exp_cfg.loss_fn_name)
         answer_mask = batch["answer_mask"] if exp_cfg.only_train_on_answer else None
         loss = loss_fn(output, batch, answer_mask)
@@ -325,18 +357,21 @@ for epoch in range(cfg.max_num_epochs):
                 for comp in grad_to_collapse[n][: exp_cfg.grad_num_proj]:
                     grads -= project_out(grads, comp)
 
+                # filter out disruptive grads
+                if exp_cfg.get("kl_ratio_thresh") is not None:
+                    assert m.kl_div_grad.shape == grads.shape
+                    ratios = (-m.kl_div_grad / grads).nan_to_num()
+                    mask = ratios > exp_cfg.kl_ratio_thresh
+                    # print(
+                    #     (mask & (grads != 0)).float().mean(),
+                    #     ratios[(grads != 0)].mean(),
+                    #     ratios[(grads != 0)].max(),
+                    # )
+                    grads[mask] = 0
+
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
-
-        # todo try smth similar, but with whole update matrix on a shared 
-        # # filter out disruptive grads
-        # if exp_cfg.get("kl_ratio_thresh") is not None:
-        #     assert m.kl_div_grad.shape == grads.shape
-        #     ratios = (-m.kl_div_grad / grads).nan_to_num()
-        #     mask = ratios > exp_cfg.kl_ratio_thresh
-        #     grads[mask] = 0
-
 
         # ! normalize grads
         if cfg.normalize:
@@ -352,36 +387,7 @@ for epoch in range(cfg.max_num_epochs):
 
         optimizer.step()
 
-
-
-        # todo adapt it to move on retain_batches and decay avg updates from kl_div
-        # if exp_cfg.get("kl_ratio_thresh") is not None:
-        #     assert exp_cfg.only_train_on_answer
-        #     # ! compute context disruption
-        #     # output = model(**batch, output_hidden_states=True)  # already calculated
-        #     cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
-        #     original_last_act = batch["original_last_act"].to("cuda")[cntxt_mask]
-        #     # we store acts and recalculate logits to save memory
-        #     original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
-        #     logits = output.logits[cntxt_mask]
-        #     original_logits = normalize_logits(original_logits.float())
-        #     logits = normalize_logits(logits.float())
-        #     # calculate KL divergence between original and current logits
-        #     kl_div = F.kl_div(
-        #         logits, original_logits, reduction="batchmean", log_target=True
-        #     )
-        #     assert kl_div > 0
-        #     _kl_div_acc += kl_div.item()
-        #     # this kl_div calculation is the same as:
-        #     # (original_logits.exp() * (original_logits - logits)).sum(dim=-1).mean()
-        #     # note that retain_graph is only possible if we don't update the weights
-        #     kl_div.backward(retain_graph=True)
-        #     for n, m in trainable_modules(model):
-        #         m.kl_div_grad = get_last_grad(m, batch["attention_mask"])
-
-
         if "retaining_rate" in exp_cfg:
-            # todo optionally use KL div loss here
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch)
@@ -391,7 +397,7 @@ for epoch in range(cfg.max_num_epochs):
 
     # ! get metrics
     res = get_metrics(model)
-    wandb.log(res)
+    wandb.log(res | {"kl_div": _kl_div_acc / len(training_batches)})
     if res["wikitext_loss"] > initial_res["wikitext_loss"] * 1.01:
         break
 
