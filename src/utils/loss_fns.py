@@ -18,7 +18,14 @@ def _normalize_logits(logits):
 
 
 def kl_loss(output, batch, model):
-    attn_mask = batch["attention_mask"].bool()
+
+    # todo simplify this in the end
+    if "answer_mask" in batch:
+        attn_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+    else:
+        attn_mask = batch["attention_mask"].bool()
+
+
     logits = output.logits[attn_mask]
     # we store acts and recalculate logits to save memory
     original_last_act = batch["original_last_act"].to("cuda")[attn_mask]

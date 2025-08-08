@@ -26,8 +26,8 @@ experiment_list:
       loss_fn_name: correct_logit
       only_train_on_answer: true
       unlearning_rate: 1e-3
-      # retaining_rate: 1e-3
-      # retaining_loss_fn: kl_loss
+      retaining_rate: 1e-3
+      retaining_loss_fn: kl_loss
       recalc_every_n_epochs: 3
-      kl_acc_decay: 0.99
+      # kl_acc_decay: 0.99
       # kl_ratio_thresh: 0.1

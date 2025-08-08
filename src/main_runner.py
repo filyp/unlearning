@@ -253,7 +253,9 @@ if "retaining_rate" in exp_cfg:
 
 # * cache the activations for context undisruption
 model.train()
-for batch in retain_batches:
+# for batch in retain_batches:
+# for batch in training_batches:
+for batch in retain_batches + training_batches:
     with pt.no_grad():
         output = model(**batch, output_hidden_states=True)
     batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
@@ -342,19 +344,18 @@ for epoch in range(cfg.max_num_epochs):
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        # filter out disruptive grads
-        if exp_cfg.get("kl_acc_decay") is not None:
-            assert m.kl_acc.shape == m.weight.grad.shape
-            # ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
-            # mask = ratios > exp_cfg.kl_ratio_thresh
-            # m.weight.grad[mask] = 0
-            
-            column_norms = m.kl_acc.norm(dim=0)
-            column_mask = column_norms > column_norms.median()
-            m.weight.grad[:, column_mask] = 0
-            row_norms = m.weight.grad.norm(dim=1)
-            row_mask = row_norms > row_norms.median()
-            m.weight.grad[row_mask, :] = 0
+        # # filter out disruptive grads
+        # if exp_cfg.get("kl_acc_decay") is not None:
+        #     assert m.kl_acc.shape == m.weight.grad.shape
+        #     # ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
+        #     # mask = ratios > exp_cfg.kl_ratio_thresh
+        #     # m.weight.grad[mask] = 0
+        #     column_norms = m.kl_acc.norm(dim=0)
+        #     column_mask = column_norms > 0.00001
+        #     m.weight.grad[:, column_mask] = 0
+        #     row_norms = m.weight.grad.norm(dim=1)
+        #     row_mask = row_norms > 0.00001
+        #     m.weight.grad[row_mask, :] = 0
 
         # ! normalize grads
         if cfg.normalize:
@@ -371,28 +372,45 @@ for epoch in range(cfg.max_num_epochs):
         optimizer.step()
 
         if "retaining_rate" in exp_cfg:
-            retaining_batch = retain_batches[i % len(retain_batches)]
+            # batch = retain_batches[i % len(retain_batches)]
+            # cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+
             model.zero_grad(set_to_none=True)
-            output = model(**retaining_batch, output_hidden_states=True)
+            output = model(**batch, output_hidden_states=True)
 
             if exp_cfg.retaining_loss_fn == "kl_loss":
-                loss = kl_loss(output, retaining_batch, model)
+                loss = kl_loss(output, batch, model) * 0.03
             elif exp_cfg.retaining_loss_fn == "cross_entropy":
-                loss = cross_entropy(output, retaining_batch)
+                loss = cross_entropy(output, batch)
 
             loss.backward()
             retain_optimizer.step()
 
-        if exp_cfg.get("kl_acc_decay") is not None:
-            retaining_batch = retain_batches[i % len(retain_batches)]
+
+
+
+            batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
-            output = model(**retaining_batch, output_hidden_states=True)
-            loss = kl_loss(output, retaining_batch, model)
+            output = model(**batch, output_hidden_states=True)
+
+            if exp_cfg.retaining_loss_fn == "kl_loss":
+                loss = kl_loss(output, batch, model)
+            elif exp_cfg.retaining_loss_fn == "cross_entropy":
+                loss = cross_entropy(output, batch)
+
             loss.backward()
-            for _, m in trainable_modules(model):
-                m.kl_acc *= exp_cfg.kl_acc_decay
-                m.kl_acc += (1 - exp_cfg.kl_acc_decay) * m.weight.grad
-            model.zero_grad(set_to_none=True)
+            retain_optimizer.step()
+
+        # if exp_cfg.get("kl_acc_decay") is not None:
+        #     retaining_batch = retain_batches[i % len(retain_batches)]
+        #     model.zero_grad(set_to_none=True)
+        #     output = model(**retaining_batch, output_hidden_states=True)
+        #     loss = kl_loss(output, retaining_batch, model)
+        #     loss.backward()
+        #     for _, m in trainable_modules(model):
+        #         m.kl_acc *= exp_cfg.kl_acc_decay
+        #         m.kl_acc += (1 - exp_cfg.kl_acc_decay) * m.weight.grad
+        #     model.zero_grad(set_to_none=True)
         
 
     # ! get metrics
