@@ -343,11 +343,18 @@ for epoch in range(cfg.max_num_epochs):
                 assert m.weight.grad.shape == m.weight.shape
 
         # filter out disruptive grads
-        if exp_cfg.get("kl_ratio_thresh") is not None:
+        if exp_cfg.get("kl_acc_decay") is not None:
             assert m.kl_acc.shape == m.weight.grad.shape
-            ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
-            mask = ratios > exp_cfg.kl_ratio_thresh
-            m.weight.grad[mask] = 0
+            # ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
+            # mask = ratios > exp_cfg.kl_ratio_thresh
+            # m.weight.grad[mask] = 0
+            
+            column_norms = m.kl_acc.norm(dim=0)
+            column_mask = column_norms > column_norms.median()
+            m.weight.grad[:, column_mask] = 0
+            row_norms = m.weight.grad.norm(dim=1)
+            row_mask = row_norms > row_norms.median()
+            m.weight.grad[row_mask, :] = 0
 
         # ! normalize grads
         if cfg.normalize:
