@@ -228,7 +228,7 @@ def get_metrics(model):
     return res
 
 
-# %%
+# %% setup
 
 # * load model
 model = AutoModelForCausalLM.from_pretrained(
@@ -258,6 +258,10 @@ for batch in retain_batches:
         output = model(**batch, output_hidden_states=True)
     batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
 
+# * initialize kl_acc
+for _, m in trainable_modules(model):
+    m.kl_acc = pt.zeros_like(m.weight)
+
 # %%
 # script name -> project
 # config name & hash -> group
@@ -265,7 +269,7 @@ for batch in retain_batches:
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "08.08.2025nodev"
+group = args.config_name + "_" + "08.08.2025nodev"  # todo change back
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
@@ -338,13 +342,12 @@ for epoch in range(cfg.max_num_epochs):
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        # todo try smth similar, but with whole update matrix on a shared
-        # # filter out disruptive grads
-        # if exp_cfg.get("kl_ratio_thresh") is not None:
-        #     assert m.kl_div_grad.shape == grads.shape
-        #     ratios = (-m.kl_div_grad / grads).nan_to_num()
-        #     mask = ratios > exp_cfg.kl_ratio_thresh
-        #     grads[mask] = 0
+        # filter out disruptive grads
+        if exp_cfg.get("kl_ratio_thresh") is not None:
+            assert m.kl_acc.shape == m.weight.grad.shape
+            ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
+            mask = ratios > exp_cfg.kl_ratio_thresh
+            m.weight.grad[mask] = 0
 
         # ! normalize grads
         if cfg.normalize:
@@ -360,10 +363,7 @@ for epoch in range(cfg.max_num_epochs):
 
         optimizer.step()
 
-        # todo adapt it to move on retain_batches and decay avg updates from kl_div
-
         if "retaining_rate" in exp_cfg:
-            # todo optionally use KL div loss here
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
             output = model(**retaining_batch, output_hidden_states=True)
@@ -375,6 +375,18 @@ for epoch in range(cfg.max_num_epochs):
 
             loss.backward()
             retain_optimizer.step()
+
+        if exp_cfg.get("kl_acc_decay") is not None:
+            retaining_batch = retain_batches[i % len(retain_batches)]
+            model.zero_grad(set_to_none=True)
+            output = model(**retaining_batch, output_hidden_states=True)
+            loss = kl_loss(output, retaining_batch, model)
+            loss.backward()
+            for _, m in trainable_modules(model):
+                m.kl_acc *= exp_cfg.kl_acc_decay
+                m.kl_acc += (1 - exp_cfg.kl_acc_decay) * m.weight.grad
+            model.zero_grad(set_to_none=True)
+        
 
     # ! get metrics
     res = get_metrics(model)

@@ -29,3 +29,5 @@ experiment_list:
       # retaining_rate: 3e-4
       # retaining_loss_fn: kl_loss
       recalc_every_n_epochs: 3
+      kl_acc_decay: 0.99
+      kl_ratio_thresh: 0.1

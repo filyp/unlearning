@@ -29,7 +29,7 @@ def kl_loss(output, batch, model):
 
     # calculate KL divergence between original and current logits
     kl_div = F.kl_div(logits, original_logits, reduction="batchmean", log_target=True)
-    assert kl_div > 0
+    assert kl_div > -1e-6  # it can be slightly negative due to numerical errors
     # this kl_div calculation is the same as:
     # (original_logits.exp() * (original_logits - logits)).sum(dim=-1).mean()
     return kl_div
