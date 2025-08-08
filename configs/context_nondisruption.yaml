@@ -17,7 +17,6 @@ target_modules:
     - up_proj
     - down_proj
 
-# todo change it later
 experiment_number: ???
 experiment_list:
 
@@ -27,14 +26,5 @@ experiment_list:
       loss_fn_name: correct_logit
       only_train_on_answer: true
       unlearning_rate: 1e-3
+      retaining_rate: 3e-5
       recalc_every_n_epochs: 3
-      kl_ratio_thresh: null
-
-    - algorithm: CIR
-      act_num_proj: 7
-      grad_num_proj: 7
-      loss_fn_name: correct_logit
-      only_train_on_answer: true
-      unlearning_rate: 1e-3
-      recalc_every_n_epochs: 3
-      kl_ratio_thresh: 0.001
