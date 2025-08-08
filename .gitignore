@@ -14,3 +14,4 @@ outputs
 data
 game_data
 src/*.egg-info
+slurm-*.out

@@ -60,8 +60,11 @@ wikitext_batches = [
 
 # ! load proper datasets
 if cfg.dataset == "wmdp_bio":
-    T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
+    # todo go back to no dev
+    # T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
+    # V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
+    T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
@@ -256,7 +259,8 @@ if exp_cfg.get("kl_ratio_thresh") is not None:
 # experiment number -> name
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-group = args.config_name + "_" + get_conf_hash(args.config_name)
+# group = args.config_name + "_" + get_conf_hash(args.config_name)
+group = args.config_name + "_" + "08.08.2025"
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
