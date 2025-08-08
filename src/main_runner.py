@@ -13,7 +13,6 @@ from pathlib import Path
 import hydra
 import matplotlib.pyplot as plt
 import torch as pt
-import torch.nn.functional as F
 from datasets import Dataset, concatenate_datasets, load_dataset
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer
@@ -24,7 +23,7 @@ from utils.common_cir import *
 from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import get_conf_hash, repo_root
-from utils.loss_fns import cross_entropy, normalize_logits
+from utils.loss_fns import cross_entropy, kl_loss
 from utils.training import get_update_norm, set_seeds, trainable_modules
 
 # plt dark theme
@@ -60,11 +59,10 @@ wikitext_batches = [
 
 # ! load proper datasets
 if cfg.dataset == "wmdp_bio":
-    # todo go back to no dev
-    # T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
-    # V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
-    T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
+    T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
+    V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
+    # T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
+    # V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
     T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
     print(f"{len(T)=}, {len(V)=}")
@@ -201,6 +199,14 @@ def get_metrics(model):
             res["wikitext_loss"] += cross_entropy(output, batch).item()
     res["wikitext_loss"] /= len(wikitext_batches)
 
+    # ! eval retain
+    res["retain_loss"] = 0
+    for batch in retain_batches[:8]:  # only 8, because it's less important
+        with pt.no_grad():
+            output = model(**batch)
+            res["retain_loss"] += cross_entropy(output, batch).item()
+    res["retain_loss"] /= 8
+
     # ! eval forget acc
     if "wmdp" in cfg.dataset:
         res["forget_acc"] = eval_on(eval_qs, model, temperature=1)
@@ -246,12 +252,11 @@ if "retaining_rate" in exp_cfg:
 #     print(acc)
 
 # * cache the activations for context undisruption
-if exp_cfg.get("kl_ratio_thresh") is not None:
-    model.train()
-    for batch in retain_batches:
-        with pt.no_grad():
-            output = model(**batch, output_hidden_states=True)
-        batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
+model.train()
+for batch in retain_batches:
+    with pt.no_grad():
+        output = model(**batch, output_hidden_states=True)
+    batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
 
 # %%
 # script name -> project
@@ -260,7 +265,7 @@ if exp_cfg.get("kl_ratio_thresh") is not None:
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "08.08.2025"
+group = args.config_name + "_" + "08.08.2025nodev"
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
@@ -333,14 +338,13 @@ for epoch in range(cfg.max_num_epochs):
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        # todo try smth similar, but with whole update matrix on a shared 
+        # todo try smth similar, but with whole update matrix on a shared
         # # filter out disruptive grads
         # if exp_cfg.get("kl_ratio_thresh") is not None:
         #     assert m.kl_div_grad.shape == grads.shape
         #     ratios = (-m.kl_div_grad / grads).nan_to_num()
         #     mask = ratios > exp_cfg.kl_ratio_thresh
         #     grads[mask] = 0
-
 
         # ! normalize grads
         if cfg.normalize:
@@ -356,39 +360,19 @@ for epoch in range(cfg.max_num_epochs):
 
         optimizer.step()
 
-
         # todo adapt it to move on retain_batches and decay avg updates from kl_div
-        # if exp_cfg.get("kl_ratio_thresh") is not None:
-        #     assert exp_cfg.only_train_on_answer
-        #     # ! compute context disruption
-        #     # output = model(**batch, output_hidden_states=True)  # already calculated
-        #     cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
-        #     original_last_act = batch["original_last_act"].to("cuda")[cntxt_mask]
-        #     # we store acts and recalculate logits to save memory
-        #     original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
-        #     logits = output.logits[cntxt_mask]
-        #     original_logits = normalize_logits(original_logits.float())
-        #     logits = normalize_logits(logits.float())
-        #     # calculate KL divergence between original and current logits
-        #     kl_div = F.kl_div(
-        #         logits, original_logits, reduction="batchmean", log_target=True
-        #     )
-        #     assert kl_div > 0
-        #     _kl_div_acc += kl_div.item()
-        #     # this kl_div calculation is the same as:
-        #     # (original_logits.exp() * (original_logits - logits)).sum(dim=-1).mean()
-        #     # note that retain_graph is only possible if we don't update the weights
-        #     kl_div.backward(retain_graph=True)
-        #     for n, m in trainable_modules(model):
-        #         m.kl_div_grad = get_last_grad(m, batch["attention_mask"])
-
 
         if "retaining_rate" in exp_cfg:
             # todo optionally use KL div loss here
             retaining_batch = retain_batches[i % len(retain_batches)]
             model.zero_grad(set_to_none=True)
-            output = model(**retaining_batch)
-            loss = cross_entropy(output, retaining_batch)
+            output = model(**retaining_batch, output_hidden_states=True)
+
+            if exp_cfg.retaining_loss_fn == "kl_loss":
+                loss = kl_loss(output, retaining_batch, model)
+            elif exp_cfg.retaining_loss_fn == "cross_entropy":
+                loss = cross_entropy(output, retaining_batch)
+
             loss.backward()
             retain_optimizer.step()
 

@@ -17,7 +17,7 @@ target_modules:
     - up_proj
     - down_proj
 
-experiment_number: ???
+experiment_number: 0
 experiment_list:
 
     - algorithm: CIR
@@ -25,6 +25,7 @@ experiment_list:
       grad_num_proj: 7
       loss_fn_name: correct_logit
       only_train_on_answer: true
-      unlearning_rate: 3e-4
-      retaining_rate: 3e-5
+      unlearning_rate: 1e-3
+      # retaining_rate: 3e-4
+      # retaining_loss_fn: kl_loss
       recalc_every_n_epochs: 3

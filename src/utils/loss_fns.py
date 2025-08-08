@@ -1,6 +1,5 @@
-import gc
-
 import torch as pt
+import torch.nn.functional as F
 
 # new_logits = []
 # new_target_probs = []
@@ -13,9 +12,27 @@ import torch as pt
 # new_target_probs = pt.stack(new_target_probs)
 
 
-def normalize_logits(logits):
+def _normalize_logits(logits):
     """Shift the raw logits to make them logs of probabilities summing to one."""
     return logits - logits.exp().sum(dim=-1, keepdim=True).log()
+
+
+def kl_loss(output, batch, model):
+    attn_mask = batch["attention_mask"].bool()
+    logits = output.logits[attn_mask]
+    # we store acts and recalculate logits to save memory
+    original_last_act = batch["original_last_act"].to("cuda")[attn_mask]
+    original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
+
+    logits = _normalize_logits(logits.float())
+    original_logits = _normalize_logits(original_logits.float())
+
+    # calculate KL divergence between original and current logits
+    kl_div = F.kl_div(logits, original_logits, reduction="batchmean", log_target=True)
+    assert kl_div > 0
+    # this kl_div calculation is the same as:
+    # (original_logits.exp() * (original_logits - logits)).sum(dim=-1).mean()
+    return kl_div
 
 
 def cross_entropy(output, batch, answer_mask=None):

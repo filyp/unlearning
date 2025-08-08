@@ -24,7 +24,7 @@ from utils.common_cir import *
 from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import get_conf_hash, repo_root
-from utils.loss_fns import cross_entropy, normalize_logits
+from utils.loss_fns import cross_entropy, _normalize_logits
 from utils.training import get_update_norm, set_seeds, trainable_modules
 
 # plt dark theme
@@ -316,8 +316,8 @@ for epoch in range(cfg.max_num_epochs):
             # we store acts and recalculate logits to save memory
             original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
             logits = output.logits[cntxt_mask]
-            original_logits = normalize_logits(original_logits.float())
-            logits = normalize_logits(logits.float())
+            original_logits = _normalize_logits(original_logits.float())
+            logits = _normalize_logits(logits.float())
 
             # calculate KL divergence between original and current logits
             kl_div = F.kl_div(
