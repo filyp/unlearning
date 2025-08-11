@@ -345,40 +345,33 @@ for epoch in range(cfg.max_num_epochs):
                 assert m.weight.grad.shape == m.weight.shape
 
         scale_grads_(model, exp_cfg.unlearning_rate)  # apply intended lr
-        if cfg.normalize and ("max_norm" not in globals()):
-            # * establish max_norm
-            max_norm = get_update_norm(model) * 1
+        if cfg.normalize and ("max_norm" not in globals()):  # establish max_norm
+            max_norm = get_update_norm(model) * 2
             print(f"max_norm: {max_norm:7.2f}")
-        _pre0 = get_update_norm(model)
+
         pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-
-
         unit_optimizer.step()  # unit_optimizer has lr=1.0
-        model.zero_grad(set_to_none=True)
-
 
         if "retaining_rate" in exp_cfg:
             if exp_cfg.retain_on_context:
+                # todo it would be possible to reusethe forward pass
+                #     do it in the optimized version, but here, be general
                 _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
             else:
                 # use retain_batches
                 batch = retain_batches[i % len(retain_batches)]
                 _mask = batch["attention_mask"].bool()
 
+            model.zero_grad(set_to_none=True)
             output = model(**batch, output_hidden_states=True)
 
             if exp_cfg.retaining_loss_fn == "kl_loss":
                 loss = kl_loss(output, batch, model, _mask)
-                # print(f"kl_loss: {loss:7.5f}")
-                # if loss > exp_cfg.kl_thresh:
-                #     model.zero_grad(set_to_none=True)
-                #     print("zeroing grads", end="")
             elif exp_cfg.retaining_loss_fn == "cross_entropy":
                 assert not exp_cfg.retain_on_context, "not implemented"
                 loss = cross_entropy(output, batch)
 
-            loss *= exp_cfg.retaining_rate
-            loss.backward()  # note that this adds to the existing unlearning update
+            loss.backward()
             
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
@@ -387,14 +380,8 @@ for epoch in range(cfg.max_num_epochs):
                 mask = (w - orig_w).sign() != w.grad.sign()
                 w.grad[mask] = 0
 
+            scale_grads_(model, exp_cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
-            model.zero_grad(set_to_none=True)
-
-        # # _pre = get_update_norm(model)
-        # # pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-        # _post = get_update_norm(model)
-        # print(f"pre0: {_pre0:7.5f}, post: {_post:7.5f}")
-        # unit_optimizer.step()  # unit_optimizer has lr=1.0
 
     # ! get metrics
     res = get_metrics(model)
