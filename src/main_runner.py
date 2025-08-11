@@ -241,8 +241,8 @@ for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
 original_weights = {
-    # n: m.weight.data.clone().to(pt.float8_e4m3fn)
-    n: m.weight.data.clone()
+    # n: m.weight.clone().detach().to(pt.float8_e4m3fn)
+    n: m.weight.clone().detach()
     for n, m in trainable_modules(model)
 }
 
@@ -379,7 +379,8 @@ for epoch in range(cfg.max_num_epochs):
 
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
-                w = model.get_submodule(n).weight.data
+                w = model.get_submodule(n).weight
+                # w = model.get_submodule(n).weight.to(pt.float8_e4m3fn)
                 orig_w = original_weights[n]
                 mask = (w - orig_w).sign() != w.grad.sign()
                 # mask = (w - orig_w).sign() * w.grad.sign() == -1
