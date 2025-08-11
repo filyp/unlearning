@@ -30,5 +30,7 @@ experiment_list:
       retaining_loss_fn: kl_loss
       retain_on_context: true
       recalc_every_n_epochs: 3
+      kl_thresh: 1
+      # retain_max_norm: 1e-4
       # kl_acc_decay: 0.99
       # kl_ratio_thresh: 0.1

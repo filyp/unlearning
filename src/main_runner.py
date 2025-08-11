@@ -24,7 +24,7 @@ from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import get_conf_hash, repo_root
 from utils.loss_fns import cross_entropy, kl_loss
-from utils.training import get_update_norm, set_seeds, trainable_modules
+from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_modules
 
 # plt dark theme
 plt.style.use("dark_background")
@@ -242,9 +242,7 @@ for n, p in model.named_parameters():
 
 install_hooks(model)
 
-optimizer = pt.optim.SGD(model.parameters(), lr=exp_cfg.unlearning_rate)
-if "retaining_rate" in exp_cfg:
-    retain_optimizer = pt.optim.SGD(model.parameters(), lr=exp_cfg.retaining_rate)
+unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 
 # # inspect per question acc
 # for ex in eval_qs:
@@ -344,32 +342,13 @@ for epoch in range(cfg.max_num_epochs):
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        # # filter out disruptive grads
-        # if exp_cfg.get("kl_acc_decay") is not None:
-        #     assert m.kl_acc.shape == m.weight.grad.shape
-        #     # ratios = (-m.kl_acc / m.weight.grad).nan_to_num()
-        #     # mask = ratios > exp_cfg.kl_ratio_thresh
-        #     # m.weight.grad[mask] = 0
-        #     column_norms = m.kl_acc.norm(dim=0)
-        #     column_mask = column_norms > 0.00001
-        #     m.weight.grad[:, column_mask] = 0
-        #     row_norms = m.weight.grad.norm(dim=1)
-        #     row_mask = row_norms > 0.00001
-        #     m.weight.grad[row_mask, :] = 0
-
-        # ! normalize grads
-        if cfg.normalize:
-            update_norm = get_update_norm(model)
-            if "max_norm" not in globals():
-                max_norm = update_norm
-                print(f"max_norm: {max_norm:7.2f}")
-            # print(f"update_norm: {update_norm:7.2f}")
-            # normalize only if the update is larger than the initial update times X
-            if update_norm > max_norm * 1:
-                for n, m in trainable_modules(model):
-                    m.weight.grad *= max_norm / update_norm
-
-        optimizer.step()
+        scale_grads_(model, exp_cfg.unlearning_rate)  # apply intended lr
+        if cfg.normalize and ("max_norm" not in globals()):
+            # * establish max_norm
+            max_norm = get_update_norm(model) * 1
+            print(f"max_norm: {max_norm:7.2f}")
+        _pre0 = get_update_norm(model)
+        pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
 
         if "retaining_rate" in exp_cfg:
             if exp_cfg.retain_on_context:
@@ -379,41 +358,26 @@ for epoch in range(cfg.max_num_epochs):
                 batch = retain_batches[i % len(retain_batches)]
                 _mask = batch["attention_mask"].bool()
 
-            model.zero_grad(set_to_none=True)
             output = model(**batch, output_hidden_states=True)
 
             if exp_cfg.retaining_loss_fn == "kl_loss":
                 loss = kl_loss(output, batch, model, _mask)
+                print(f"kl_loss: {loss:7.5f}")
+                if loss > exp_cfg.kl_thresh:
+                    model.zero_grad(set_to_none=True)
+                    print("zeroing grads", end="")
             elif exp_cfg.retaining_loss_fn == "cross_entropy":
                 assert not exp_cfg.retain_on_context, "not implemented"
                 loss = cross_entropy(output, batch)
 
-            loss.backward()
-            retain_optimizer.step()
+            loss *= exp_cfg.retaining_rate
+            loss.backward()  # note that this adds to the existing unlearning update
 
-
-
-
-        # if exp_cfg.get("kl_acc_decay") is not None:
-        #     retaining_batch = retain_batches[i % len(retain_batches)]
-        #     model.zero_grad(set_to_none=True)
-        #     output = model(**retaining_batch, output_hidden_states=True)
-        #     loss = kl_loss(output, retaining_batch, model)
-        #     loss.backward()
-        #     for _, m in trainable_modules(model):
-        #         m.kl_acc *= exp_cfg.kl_acc_decay
-        #         m.kl_acc += (1 - exp_cfg.kl_acc_decay) * m.weight.grad
-        #     model.zero_grad(set_to_none=True)
-        
-
-
-
-# loss.backward()
-# scale_grads_(model, exp_cfg.unlearning_rate)  # apply intended lr
-# pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=YOUR_CAP)  # cap actual update
-# optimizer.step()  # optimizer has lr=1.0
-
-
+        # _pre = get_update_norm(model)
+        # pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+        _post = get_update_norm(model)
+        print(f"pre0: {_pre0:7.5f}, post: {_post:7.5f}")
+        unit_optimizer.step()  # unit_optimizer has lr=1.0
 
     # ! get metrics
     res = get_metrics(model)
