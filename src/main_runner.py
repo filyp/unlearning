@@ -275,7 +275,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "11.08.2025"  # todo change back
+group = args.config_name + "_" + "local_11.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
@@ -380,9 +380,9 @@ for epoch in range(cfg.max_num_epochs):
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
                 w = model.get_submodule(n).weight
-                orig_w = original_weights[n]
-                w_8bit = w.detach().to(orig_w.dtype)
-                # mask = (w - orig_w).sign() != w.grad.sign()
+                orig_w = original_weights[n].to(pt.bfloat16)
+                w_8bit = w.detach().to(pt.float8_e4m3fn).to(pt.bfloat16)
+                # mask = (w_8bit - orig_w).sign() != w.grad.sign()
                 mask = ((w_8bit - orig_w).sign() * w.grad.sign()) == -1
                 w.grad[mask] = 0
 
