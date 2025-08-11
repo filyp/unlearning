@@ -241,8 +241,8 @@ for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
 original_weights = {
-    # n: m.weight.clone().detach().to(pt.float8_e4m3fn)
-    n: m.weight.clone().detach()
+    n: m.weight.clone().detach().to(pt.float8_e4m3fn)
+    # n: m.weight.clone().detach()
     for n, m in trainable_modules(model)
 }
 
@@ -380,10 +380,10 @@ for epoch in range(cfg.max_num_epochs):
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
                 w = model.get_submodule(n).weight
-                # w = model.get_submodule(n).weight.to(pt.float8_e4m3fn)
                 orig_w = original_weights[n]
-                mask = (w - orig_w).sign() != w.grad.sign()
-                # mask = (w - orig_w).sign() * w.grad.sign() == -1
+                w_8bit = w.detach().to(orig_w.dtype)
+                # mask = (w - orig_w).sign() != w.grad.sign()
+                mask = ((w_8bit - orig_w).sign() * w.grad.sign()) == -1
                 w.grad[mask] = 0
 
             scale_grads_(model, exp_cfg.retaining_rate)  # apply intended lr
