@@ -236,7 +236,11 @@ model = AutoModelForCausalLM.from_pretrained(
     cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
 )
 model.config.use_cache = False
-original_model = deepcopy(model)
+
+original_weights = {
+    n: m.weight.data.clone()#.to(pt.float8_e4m3fn)    
+    for n, m in trainable_modules(model)
+}
 
 # * set trainable params
 for n, p in model.named_parameters():
@@ -375,8 +379,8 @@ for epoch in range(cfg.max_num_epochs):
             
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
-                w = model.get_submodule(n).weight
-                orig_w = original_model.get_submodule(n).weight
+                w = model.get_submodule(n).weight.data
+                orig_w = original_weights[n]
                 mask = (w - orig_w).sign() != w.grad.sign()
                 w.grad[mask] = 0
 
