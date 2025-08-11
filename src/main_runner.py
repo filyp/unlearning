@@ -372,15 +372,20 @@ for epoch in range(cfg.max_num_epochs):
         optimizer.step()
 
         if "retaining_rate" in exp_cfg:
-            # batch = retain_batches[i % len(retain_batches)]
-            # cntxt_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+            if exp_cfg.retain_on_context:
+                _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+            else:
+                # use retain_batches
+                batch = retain_batches[i % len(retain_batches)]
+                _mask = batch["attention_mask"].bool()
 
             model.zero_grad(set_to_none=True)
             output = model(**batch, output_hidden_states=True)
 
             if exp_cfg.retaining_loss_fn == "kl_loss":
-                loss = kl_loss(output, batch, model) * 0.03
+                loss = kl_loss(output, batch, model, _mask)
             elif exp_cfg.retaining_loss_fn == "cross_entropy":
+                assert not exp_cfg.retain_on_context, "not implemented"
                 loss = cross_entropy(output, batch)
 
             loss.backward()
@@ -388,18 +393,6 @@ for epoch in range(cfg.max_num_epochs):
 
 
 
-
-            batch = retain_batches[i % len(retain_batches)]
-            model.zero_grad(set_to_none=True)
-            output = model(**batch, output_hidden_states=True)
-
-            if exp_cfg.retaining_loss_fn == "kl_loss":
-                loss = kl_loss(output, batch, model)
-            elif exp_cfg.retaining_loss_fn == "cross_entropy":
-                loss = cross_entropy(output, batch)
-
-            loss.backward()
-            retain_optimizer.step()
 
         # if exp_cfg.get("kl_acc_decay") is not None:
         #     retaining_batch = retain_batches[i % len(retain_batches)]
@@ -412,6 +405,15 @@ for epoch in range(cfg.max_num_epochs):
         #         m.kl_acc += (1 - exp_cfg.kl_acc_decay) * m.weight.grad
         #     model.zero_grad(set_to_none=True)
         
+
+
+
+# loss.backward()
+# scale_grads_(model, exp_cfg.unlearning_rate)  # apply intended lr
+# pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=YOUR_CAP)  # cap actual update
+# optimizer.step()  # optimizer has lr=1.0
+
+
 
     # ! get metrics
     res = get_metrics(model)

@@ -58,6 +58,13 @@ def trainable_modules(model):
     ]
 
 
+# # instead use: pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=YOUR_CAP)
+# def scale_grads_(model, factor: float):
+#     for _, p in model.named_parameters():
+#         if p.grad is not None:
+#             p.grad *= factor
+
+
 def get_grad(model, batch, loss_mask=None, loss_fn_name="cross_entropy"):
     model.zero_grad(set_to_none=True)
     output = model(**batch)

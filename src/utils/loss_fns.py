@@ -17,18 +17,11 @@ def _normalize_logits(logits):
     return logits - logits.exp().sum(dim=-1, keepdim=True).log()
 
 
-def kl_loss(output, batch, model):
+def kl_loss(output, batch, model, mask):
 
-    # todo simplify this in the end
-    if "answer_mask" in batch:
-        attn_mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
-    else:
-        attn_mask = batch["attention_mask"].bool()
-
-
-    logits = output.logits[attn_mask]
+    logits = output.logits[mask]
     # we store acts and recalculate logits to save memory
-    original_last_act = batch["original_last_act"].to("cuda")[attn_mask]
+    original_last_act = batch["original_last_act"].to("cuda")[mask]
     original_logits = (model.model.embed_tokens.weight @ original_last_act.T).T
 
     logits = _normalize_logits(logits.float())
