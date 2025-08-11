@@ -25,8 +25,8 @@ experiment_list:
       grad_num_proj: 7
       loss_fn_name: correct_logit
       only_train_on_answer: true
-      unlearning_rate: 3e-4
-      retaining_rate: 2e-4
+      unlearning_rate: 5e-4
+      retaining_rate: 5e-4
       retaining_loss_fn: kl_loss
       retain_on_context: true
       recalc_every_n_epochs: 3
