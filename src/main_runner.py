@@ -6,9 +6,9 @@
 # but here, we aim for more simlicity and dataset generality
 
 import argparse
-from copy import deepcopy
 import logging
 import time
+from copy import deepcopy
 from pathlib import Path
 
 import hydra
@@ -40,7 +40,6 @@ args, remaining_args = parser.parse_known_args()
 with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 # cfg = OmegaConf.load("../configs/context_nondisruption.yaml")  # for debugging
-
 
 exp_cfg = cfg.experiment_list[cfg.experiment_number]
 
@@ -237,14 +236,15 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.config.use_cache = False
 
-original_weights = {
-    n: m.weight.data.clone()#.to(pt.float8_e4m3fn)    
-    for n, m in trainable_modules(model)
-}
-
 # * set trainable params
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
+
+original_weights = {
+    # n: m.weight.data.clone().to(pt.float8_e4m3fn)
+    n: m.weight.data.clone()
+    for n, m in trainable_modules(model)
+}
 
 install_hooks(model)
 
@@ -275,7 +275,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "08.08.2025nodev"  # todo change back
+group = args.config_name + "_" + "11.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
@@ -376,12 +376,13 @@ for epoch in range(cfg.max_num_epochs):
                 loss = cross_entropy(output, batch)
 
             loss.backward()
-            
+
             # * only allow reverting retain updates
             for n, _ in trainable_modules(model):
                 w = model.get_submodule(n).weight.data
                 orig_w = original_weights[n]
                 mask = (w - orig_w).sign() != w.grad.sign()
+                # mask = (w - orig_w).sign() * w.grad.sign() == -1
                 w.grad[mask] = 0
 
             scale_grads_(model, exp_cfg.retaining_rate)  # apply intended lr
