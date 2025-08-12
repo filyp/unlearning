@@ -85,6 +85,7 @@ if cfg.dataset == "wmdp_bio":
         tokenizer(x["text"], **cfg.tokenizer)
         for x in _txts.select(range(len(training_batches)))
     ]
+
 elif cfg.dataset == "wmdp_cyber":
     T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
@@ -189,6 +190,15 @@ elif cfg.dataset == "jigsaw_threats":
     retain_set = jigsaw_benign  # format batches properly
 
 
+if exp_cfg.get("use_wikitext_as_retain", False):
+    # * use wikitext as retain batches
+    # this is a bad practice, only use it for trying to replicate RTT debouncing effect
+    retain_batches = [
+        tokenizer(x["text"], **cfg.tokenizer)
+        for x in _txts.select(range(16, 16 + len(training_batches)))
+    ]
+
+
 # %%
 def get_metrics(model):
     res = {}
@@ -280,7 +290,7 @@ project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
 group = args.config_name + "_" + "12.08.2025"  # todo change back
 # remove experiment_number from remaining_args
-_args = "_".join( str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
+_args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
 run_name = f"exp{cfg.experiment_number}|{_args}|{"_".join(remaining_args)}"
 wandb.init(
@@ -300,7 +310,7 @@ for epoch in range(cfg.max_num_epochs):
     pt.cuda.empty_cache()
 
     # ! recalculate projections
-    if epoch % exp_cfg.recalc_every_n_epochs == 0 and exp_cfg.algorithm == "CIR":
+    if exp_cfg.algorithm == "CIR" and epoch % exp_cfg.recalc_every_n_epochs == 0:
         acts_list = {n: [] for n, _ in trainable_modules(model)}
         grads_list = {n: [] for n, _ in trainable_modules(model)}
 

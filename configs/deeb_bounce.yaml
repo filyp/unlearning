@@ -33,3 +33,4 @@ experiment_list:
       retaining_loss_fn: cross_entropy
       retain_on_context: false
       retain_to_original: false
+      use_wikitext_as_retain: true
