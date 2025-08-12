@@ -36,3 +36,13 @@ experiment_list:
       retaining_rate: 1e-4
       retaining_loss_fn: cross_entropy
       use_wikitext_as_retain: true
+
+    - unlearning_rate: 1e-6
+      retaining_rate: 3e-4
+      retaining_loss_fn: cross_entropy
+      use_wikitext_as_retain: true
+
+    - unlearning_rate: 1e-6
+      retaining_rate: 3e-5
+      retaining_loss_fn: cross_entropy
+      use_wikitext_as_retain: true

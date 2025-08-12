@@ -292,7 +292,7 @@ group = args.config_name + "_" + "12.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
-run_name = f"exp{cfg.experiment_number}|{_args}|{"_".join(remaining_args)}"
+run_name = f"exp{cfg.experiment_number}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
     project=project_name,
     group=group,
