@@ -17,16 +17,47 @@ target_modules:
     - up_proj
     - down_proj
 
+default_experiment_cfg:
+    algorithm: CIR
+    act_num_proj: 7
+    grad_num_proj: 7
+    loss_fn_name: correct_logit
+    only_train_on_answer: true
+    recalc_every_n_epochs: 3
+    unlearning_rate: 5e-4
+
 experiment_number: 0
 experiment_list:
+      # baseline
+    - retaining_rate: 1e-3
+      retaining_loss_fn: cross_entropy
+      retain_on_context: false
+      retain_to_original: false
 
-    - algorithm: CIR
-      act_num_proj: 7
-      grad_num_proj: 7
-      loss_fn_name: correct_logit
-      only_train_on_answer: true
-      unlearning_rate: 5e-4
-      retaining_rate: 5e-4
+    # ablations
+    - retaining_rate: 1e-3
+      retaining_loss_fn: cross_entropy
+      retain_on_context: true
+      retain_to_original: true
+
+      # todo 
+    # - retaining_rate: 1e-3
+      # retaining_loss_fn: act_dist
+      # retain_on_context: true
+      # retain_to_original: true
+
+    - retaining_rate: 1e-3
+      retaining_loss_fn: kl_loss
+      retain_on_context: false
+      retain_to_original: true
+
+    - retaining_rate: 1e-3
       retaining_loss_fn: kl_loss
       retain_on_context: true
-      recalc_every_n_epochs: 3
+      retain_to_original: false
+
+    # best one
+    - retaining_rate: 1e-3
+      retaining_loss_fn: kl_loss
+      retain_on_context: true
+      retain_to_original: true

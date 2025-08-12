@@ -15,7 +15,7 @@ import hydra
 import matplotlib.pyplot as plt
 import torch as pt
 from datasets import Dataset, concatenate_datasets, load_dataset
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from transformers import AutoTokenizer
 
 import wandb
@@ -41,8 +41,11 @@ with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 # cfg = OmegaConf.load("../configs/context_nondisruption.yaml")  # for debugging
 
-exp_cfg = cfg.experiment_list[cfg.experiment_number]
-
+with open_dict(cfg.default_experiment_cfg):
+    exp_cfg = OmegaConf.merge(
+        cfg.default_experiment_cfg,
+        cfg.experiment_list[cfg.experiment_number],
+    )
 
 # ! setup
 set_seeds(42)
@@ -218,7 +221,7 @@ def get_metrics(model):
             with pt.no_grad():
                 output = model(**batch)
                 answer_mask = batch["answer_mask"]
-                context_mask = batch["attention_mask"] & ~answer_mask
+                context_mask = batch["attention_mask"].bool() & (~answer_mask.bool())
                 res["forget_loss"] += cross_entropy(output, batch, answer_mask).item()
                 res["context_loss"] += cross_entropy(output, batch, context_mask).item()
         res["forget_loss"] /= len(loss_eval_batches)
@@ -275,10 +278,14 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "11.08.2025"  # todo change back
+group = args.config_name + "_" + "local_11.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
-run_name = "_".join(str(v) for v in exp_cfg.values()) + "|" + "_".join(remaining_args)
+run_name = (
+    "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
+    + "|"
+    + "_".join(remaining_args)
+)
 wandb.init(
     project=project_name,
     group=group,
@@ -377,14 +384,16 @@ for epoch in range(cfg.max_num_epochs):
 
             loss.backward()
 
-            # * only allow reverting retain updates
-            for n, _ in trainable_modules(model):
-                w = model.get_submodule(n).weight
-                orig_w = original_weights[n].to(pt.bfloat16)
-                # w_ = w.detach().to(pt.float8_e4m3fn).to(pt.bfloat16)  # this throws the baby out with the bathwater
-                mask = (w - orig_w).sign() != w.grad.sign()  # filter out if diff=0 too
-                # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
-                w.grad[mask] = 0
+            if exp_cfg.retain_to_original:
+                # * only allow reverting retain updates
+                for n, _ in trainable_modules(model):
+                    w = model.get_submodule(n).weight
+                    orig_w = original_weights[n].to(pt.bfloat16)
+                    # w_ = w.detach().to(pt.float8_e4m3fn).to(pt.bfloat16)  # this throws the baby out with the bathwater
+                    # filter out if diff=0 too:
+                    mask = (w - orig_w).sign() != w.grad.sign()
+                    # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
+                    w.grad[mask] = 0
 
             scale_grads_(model, exp_cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0

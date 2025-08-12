@@ -43,9 +43,10 @@ def cross_entropy(output, batch, answer_mask=None):
     if answer_mask is not None:
         # note, that answer_mask is a subset of attention mask
         assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
-        mask = answer_mask[:, 1:].bool()
+        mask = answer_mask
     else:
-        mask = batch["attention_mask"][:, 1:].bool()
+        mask = batch["attention_mask"]
+    mask = mask[:, 1:].bool()
 
     return pt.nn.functional.cross_entropy(
         shifted_logits[mask],
@@ -75,9 +76,10 @@ def correct_logit(output, batch, answer_mask=None, clip_at=0):
     if answer_mask is not None:
         # note, that answer_mask is a subset of attention mask
         assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
-        mask = answer_mask[:, 1:].bool().flatten()
+        mask = answer_mask
     else:
-        mask = batch["attention_mask"][:, 1:].bool().flatten()
+        mask = batch["attention_mask"]
+    mask = mask[:, 1:].bool().flatten()
 
     return true_logits[mask].mean()
 
