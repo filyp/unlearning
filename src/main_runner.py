@@ -300,8 +300,8 @@ wandb.init(
     config=OmegaConf.to_container(exp_cfg),
 )
 
-initial_res = get_metrics(model)
-wandb.log(initial_res)
+init_res = get_metrics(model)
+wandb.log(init_res)
 assert exp_cfg.algorithm in ["CIR", "GA"]
 
 # % full training loop
@@ -408,7 +408,7 @@ for epoch in range(cfg.max_num_epochs):
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
-    if res["wikitext_loss"] > initial_res["wikitext_loss"] * 1.01:
+    if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
         break
 
 wandb.finish()

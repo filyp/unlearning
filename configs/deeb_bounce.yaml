@@ -8,6 +8,8 @@ eval_on_all_questions: false
 
 retraining_rate: 1e-6
 retraining_epochs: 10
+  
+loss_budget: 1.05
 
 max_num_epochs: 50
 tokenizer:
@@ -24,13 +26,13 @@ default_experiment_cfg:
     algorithm: GA
     loss_fn_name: neg_cross_entropy
     only_train_on_answer: false
-    unlearning_rate: 1e-6
+    retain_on_context: false
+    retain_to_original: false
 
 experiment_number: 0
 experiment_list:
-      # baseline
-    - retaining_rate: 1e-4
+
+    - unlearning_rate: 1e-6
+      retaining_rate: 1e-4
       retaining_loss_fn: cross_entropy
-      retain_on_context: false
-      retain_to_original: false
       use_wikitext_as_retain: true
