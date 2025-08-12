@@ -6,8 +6,8 @@ batch_size: 8
 normalize: true
 eval_on_all_questions: false
 
-retraining_rate: 1e-6
-retraining_epochs: 10
+retraining_rate: 2e-6
+retraining_epochs: 30
   
 loss_budget: 1.05
 
@@ -32,17 +32,12 @@ default_experiment_cfg:
 experiment_number: 0
 experiment_list:
 
-    - unlearning_rate: 1e-6
-      retaining_rate: 1e-4
+    - unlearning_rate: 3e-6
+      retaining_rate: 1e-5
       retaining_loss_fn: cross_entropy
       use_wikitext_as_retain: true
 
     - unlearning_rate: 1e-6
-      retaining_rate: 3e-4
-      retaining_loss_fn: cross_entropy
-      use_wikitext_as_retain: true
-
-    - unlearning_rate: 1e-6
-      retaining_rate: 3e-5
+      retaining_rate: 1e-5
       retaining_loss_fn: cross_entropy
       use_wikitext_as_retain: true

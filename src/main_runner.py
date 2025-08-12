@@ -434,6 +434,10 @@ wandb.init(
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 
+# * get metrics
+res = get_metrics(model)
+wandb.log(res)
+
 for epoch in range(cfg.retraining_epochs):
     model.train()
     for batch in retraining_batches:
@@ -443,7 +447,7 @@ for epoch in range(cfg.retraining_epochs):
         loss.backward()
         optimizer.step()
 
-    # ! get metrics
+    # * get metrics
     res = get_metrics(model)
     wandb.log(res)
 
