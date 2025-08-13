@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=cir
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 #SBATCH --account=plgunlearningai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=32G
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=64G
 
 # I can use up to --cpus-per-task=16 and --mem=128G, but it may make queue wait times longer
 

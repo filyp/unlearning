@@ -39,6 +39,7 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature="both"):
         "meta-llama/Llama-3.2-1B",
         "meta-llama/Llama-3.2-3B",
         "meta-llama/Llama-3.1-8B",
+        "meta-llama/Meta-Llama-3-8B",
     ]
     pt.cuda.empty_cache()
 

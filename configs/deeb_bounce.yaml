@@ -8,16 +8,16 @@ target_modules:
     - gate_proj
     - up_proj
     - down_proj
-batch_size: 8
+batch_size: 4  # 4 is the biggest we can go with 8b, on 40gb gpu
 normalize: true
 
-model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-3B
 # model_id: meta-llama/Llama-3.2-1B
-# model_id: meta-llama/Llama-3.1-8B
+model_id: meta-llama/Llama-3.1-8B
 dataset: wmdp_bio
 eval_on_all_questions: false
 
-max_num_epochs: 50
+max_num_epochs: 30
 
 retraining_rate: 2e-6
 retraining_epochs: 30
@@ -31,15 +31,31 @@ retraining_epochs: 30
 # default experiment config
 loss_fn_name: neg_cross_entropy
 only_train_on_answer: false
+algorithm: GA
+loss_budget: 1.05
+act_pca_num: 6
+grad_pca_num: 6
+cir_niter: 8
 
 experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 3e-6
-      algorithm: GA
-      loss_budget: 1.05
+      retain_to_original: false
 
     - unlearning_rate: 3e-6
-      algorithm: GA
-      loss_budget: 1.05
+      model_id: meta-llama/Meta-Llama-3-8B
       dataset: wmdp_bio_deebs
+      batch_size: 2  # 2 is needed if we're using deeb's dataset (?)
+        
+    - unlearning_rate: 3e-4
+      algorithm: CIR
+      loss_fn_name: correct_logit
+      only_train_on_answer: true
+      recalc_every_n_epochs: 5
+      retaining_rate: 1e-5
+      retaining_loss_fn: kl_loss
+      retain_on_context: true
+      retain_to_original: true
+      use_wikitext_as_retain: false
+        

@@ -46,7 +46,18 @@ with open_dict(cfg):
 
 # ! setup
 set_seeds(42)
-pt.set_default_device("cuda")
+
+num_gpus = pt.cuda.device_count()
+print(f"Number of GPUs available: {num_gpus}")
+if num_gpus == 1:
+    pt.set_default_device("cuda")
+    device_main = pt.device("cuda")
+    device_storage = pt.device("cuda")
+elif num_gpus == 2:
+    pt.set_default_device("cuda:0")
+    device_main = pt.device("cuda:0")
+    device_storage = pt.device("cuda:1")
+
 tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 
@@ -242,7 +253,7 @@ def get_metrics(model):
 
 # * load model
 model = AutoModelForCausalLM.from_pretrained(
-    cfg.model_id, torch_dtype=pt.bfloat16, device_map="cuda"
+    cfg.model_id, torch_dtype=pt.bfloat16, device_map=device_main
 )
 model.config.use_cache = False
 
@@ -250,11 +261,12 @@ model.config.use_cache = False
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
-original_weights = {
-    n: m.weight.clone().detach().to(pt.float8_e4m3fn)
-    # n: m.weight.clone().detach()
-    for n, m in trainable_modules(model)
-}
+if cfg.get("retain_to_original", False):
+    original_weights = {
+        n: m.weight.clone().detach().to(device_storage)
+        # n: m.weight.clone().detach().to(pt.float8_e4m3fn).to(device_storage)
+        for n, m in trainable_modules(model)
+    }
 
 install_hooks(model)
 
@@ -266,13 +278,17 @@ unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 #     print(acc)
 
 # * cache the activations for context undisruption
-model.train()
-# for batch in retain_batches:
-# for batch in training_batches:
-for batch in retain_batches + training_batches:
-    with pt.no_grad():
-        output = model(**batch, output_hidden_states=True)
-    batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
+if "retaining_rate" in cfg:
+    model.train()
+    if cfg.get("retain_on_context", False):
+        _act_cache_batches = training_batches
+    else:
+        _act_cache_batches = retain_batches
+
+    for batch in _act_cache_batches:
+        with pt.no_grad():
+            output = model(**batch, output_hidden_states=True)
+        batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
 
 # * initialize kl_acc
 for _, m in trainable_modules(model):
@@ -285,7 +301,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "12.08.2025"  # todo change back
+group = args.config_name + "_" + "13.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -327,8 +343,11 @@ for epoch in range(cfg.max_num_epochs):
                 grads_list[n].append(grads.to("cpu"))
 
         # ! calculate means and PCA components
-        act_to_collapse = get_projections(acts_list, num_pc=10)
-        grad_to_collapse = get_projections(grads_list, num_pc=10)
+        model.zero_grad(set_to_none=True)
+        pt.cuda.empty_cache()
+        # todo ? could have some option for also disabling grad mean? or maybe not
+        act_to_collapse = get_projections(acts_list, cfg.act_pca_num, cfg.cir_niter)
+        grad_to_collapse = get_projections(grads_list, cfg.grad_pca_num, cfg.cir_niter)
 
     # ! one epoch
     model.train()
@@ -351,9 +370,9 @@ for epoch in range(cfg.max_num_epochs):
                 assert len(acts.shape) == len(grads.shape) == 2
 
                 # ! proj out the means and PCA components
-                for comp in act_to_collapse[n][: cfg.act_num_proj]:
+                for comp in act_to_collapse[n]:
                     acts -= project_out(acts, comp)
-                for comp in grad_to_collapse[n][: cfg.grad_num_proj]:
+                for comp in grad_to_collapse[n]:
                     grads -= project_out(grads, comp)
 
                 # without the projections, this is the equivalent of normal backprop
@@ -379,6 +398,7 @@ for epoch in range(cfg.max_num_epochs):
                 _mask = batch["attention_mask"].bool()
 
             model.zero_grad(set_to_none=True)
+            pt.cuda.empty_cache()
             output = model(**batch, output_hidden_states=True)
 
             if cfg.retaining_loss_fn == "kl_loss":
@@ -389,12 +409,11 @@ for epoch in range(cfg.max_num_epochs):
 
             loss.backward()
 
-            if cfg.retain_to_original:
+            if cfg.get("retain_to_original", False):
                 # * only allow reverting retain updates
                 for n, _ in trainable_modules(model):
                     w = model.get_submodule(n).weight
-                    orig_w = original_weights[n].to(pt.bfloat16)
-                    # w_ = w.detach().to(pt.float8_e4m3fn).to(pt.bfloat16)  # this throws the baby out with the bathwater
+                    orig_w = original_weights[n].to(device_main, dtype=pt.bfloat16)
                     # filter out if diff=0 too:
                     mask = (w - orig_w).sign() != w.grad.sign()
                     # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
