@@ -1,11 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=cir
-#SBATCH --time=01:30:00
+#SBATCH --time=00:30:00
 #SBATCH --account=plgunlearningai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=32G
+
+# I can use up to --cpus-per-task=16 and --mem=128G, but it may make queue wait times longer
 
 module load CUDA/12.8.0
 

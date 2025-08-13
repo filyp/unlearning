@@ -1,17 +1,4 @@
-# model_id: meta-llama/Llama-3.2-3B
-model_id: meta-llama/Llama-3.2-1B
-# model_id: meta-llama/Llama-3.1-8B
-dataset: wmdp_bio
-batch_size: 8
-normalize: true
-eval_on_all_questions: false
-
-retraining_rate: 2e-6
-retraining_epochs: 30
-  
-loss_budget: 1.05
-
-max_num_epochs: 50
+# general, unlikely to change
 tokenizer:
     max_length: 128
     padding: true
@@ -21,23 +8,38 @@ target_modules:
     - gate_proj
     - up_proj
     - down_proj
+batch_size: 8
+normalize: true
 
-default_experiment_cfg:
-    algorithm: GA
-    loss_fn_name: neg_cross_entropy
-    only_train_on_answer: false
-    retain_on_context: false
-    retain_to_original: false
+model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-1B
+# model_id: meta-llama/Llama-3.1-8B
+dataset: wmdp_bio
+eval_on_all_questions: false
+
+max_num_epochs: 50
+
+retraining_rate: 2e-6
+retraining_epochs: 30
+
+# retaining_rate: 1e-5
+# retaining_loss_fn: cross_entropy
+# retain_on_context: false
+# retain_to_original: false
+# use_wikitext_as_retain: true
+
+# default experiment config
+loss_fn_name: neg_cross_entropy
+only_train_on_answer: false
 
 experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 3e-6
-      retaining_rate: 1e-5
-      retaining_loss_fn: cross_entropy
-      use_wikitext_as_retain: true
+      algorithm: GA
+      loss_budget: 1.05
 
-    - unlearning_rate: 1e-6
-      retaining_rate: 1e-5
-      retaining_loss_fn: cross_entropy
-      use_wikitext_as_retain: true
+    - unlearning_rate: 3e-6
+      algorithm: GA
+      loss_budget: 1.05
+      dataset: wmdp_bio_deebs

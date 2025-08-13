@@ -41,11 +41,8 @@ with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 # cfg = OmegaConf.load("../configs/context_nondisruption.yaml")  # for debugging
 
-with open_dict(cfg.default_experiment_cfg):
-    exp_cfg = OmegaConf.merge(
-        cfg.default_experiment_cfg,
-        cfg.experiment_list[cfg.experiment_number],
-    )
+with open_dict(cfg):
+    cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
 
 # ! setup
 set_seeds(42)
@@ -190,7 +187,7 @@ elif cfg.dataset == "jigsaw_threats":
     retain_set = jigsaw_benign  # format batches properly
 
 
-if exp_cfg.get("use_wikitext_as_retain", False):
+if cfg.get("use_wikitext_as_retain", False):
     # * use wikitext as retain batches
     # this is a bad practice, only use it for trying to replicate RTT debouncing effect
     retain_batches = [
@@ -222,7 +219,7 @@ def get_metrics(model):
 
     # ! eval forget acc
     if "wmdp" in cfg.dataset:
-        res["forget_acc"] = eval_on(eval_qs, model, temperature=1)
+        res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
 
         # eval forget loss - this one is rather optional
         res["forget_loss"] = 0
@@ -292,17 +289,17 @@ group = args.config_name + "_" + "12.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
-run_name = f"exp{cfg.experiment_number}|{_args}|{'_'.join(remaining_args)}"
+run_name = f"{cfg.experiment_number}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
     project=project_name,
     group=group,
     name=run_name,
-    config=OmegaConf.to_container(exp_cfg),
+    config=OmegaConf.to_container(cfg),
 )
 
 init_res = get_metrics(model)
 wandb.log(init_res)
-assert exp_cfg.algorithm in ["CIR", "GA"]
+assert cfg.algorithm in ["CIR", "GA"]
 
 # % full training loop
 start_time = time.time()
@@ -310,7 +307,7 @@ for epoch in range(cfg.max_num_epochs):
     pt.cuda.empty_cache()
 
     # ! recalculate projections
-    if exp_cfg.algorithm == "CIR" and epoch % exp_cfg.recalc_every_n_epochs == 0:
+    if cfg.algorithm == "CIR" and epoch % cfg.recalc_every_n_epochs == 0:
         acts_list = {n: [] for n, _ in trainable_modules(model)}
         grads_list = {n: [] for n, _ in trainable_modules(model)}
 
@@ -318,8 +315,8 @@ for epoch in range(cfg.max_num_epochs):
             # ! unlearning loss
             model.zero_grad(set_to_none=True)
             output = model(**batch)
-            loss_fn = getattr(loss_fns, exp_cfg.loss_fn_name)
-            answer_mask = batch["answer_mask"] if exp_cfg.only_train_on_answer else None
+            loss_fn = getattr(loss_fns, cfg.loss_fn_name)
+            answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
             loss = loss_fn(output, batch, answer_mask)
             loss.backward()
 
@@ -339,30 +336,31 @@ for epoch in range(cfg.max_num_epochs):
 
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
+        pt.cuda.empty_cache()
         output = model(**batch, output_hidden_states=True)
-        loss_fn = getattr(loss_fns, exp_cfg.loss_fn_name)
-        answer_mask = batch["answer_mask"] if exp_cfg.only_train_on_answer else None
+        loss_fn = getattr(loss_fns, cfg.loss_fn_name)
+        answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
         loss = loss_fn(output, batch, answer_mask)
         loss.backward()
 
         # ! here we modify the grad
-        if exp_cfg.algorithm == "CIR":
+        if cfg.algorithm == "CIR":
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"])
                 grads = get_last_grad(m, batch["attention_mask"])
                 assert len(acts.shape) == len(grads.shape) == 2
 
                 # ! proj out the means and PCA components
-                for comp in act_to_collapse[n][: exp_cfg.act_num_proj]:
+                for comp in act_to_collapse[n][: cfg.act_num_proj]:
                     acts -= project_out(acts, comp)
-                for comp in grad_to_collapse[n][: exp_cfg.grad_num_proj]:
+                for comp in grad_to_collapse[n][: cfg.grad_num_proj]:
                     grads -= project_out(grads, comp)
 
                 # without the projections, this is the equivalent of normal backprop
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
-        scale_grads_(model, exp_cfg.unlearning_rate)  # apply intended lr
+        scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
         if cfg.normalize and ("max_norm" not in globals()):  # establish max_norm
             max_norm = get_update_norm(model) * 2
             print(f"max_norm: {max_norm:7.2f}")
@@ -370,8 +368,8 @@ for epoch in range(cfg.max_num_epochs):
         pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
-        if "retaining_rate" in exp_cfg:
-            if exp_cfg.retain_on_context:
+        if "retaining_rate" in cfg:
+            if cfg.retain_on_context:
                 # todo it would be possible to reusethe forward pass
                 #     do it in the optimized version, but here, be general
                 _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
@@ -383,15 +381,15 @@ for epoch in range(cfg.max_num_epochs):
             model.zero_grad(set_to_none=True)
             output = model(**batch, output_hidden_states=True)
 
-            if exp_cfg.retaining_loss_fn == "kl_loss":
+            if cfg.retaining_loss_fn == "kl_loss":
                 loss = kl_loss(output, batch, model, _mask)
-            elif exp_cfg.retaining_loss_fn == "cross_entropy":
-                assert not exp_cfg.retain_on_context, "not implemented"
+            elif cfg.retaining_loss_fn == "cross_entropy":
+                assert not cfg.retain_on_context, "not implemented"
                 loss = cross_entropy(output, batch)
 
             loss.backward()
 
-            if exp_cfg.retain_to_original:
+            if cfg.retain_to_original:
                 # * only allow reverting retain updates
                 for n, _ in trainable_modules(model):
                     w = model.get_submodule(n).weight
@@ -402,7 +400,7 @@ for epoch in range(cfg.max_num_epochs):
                     # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
                     w.grad[mask] = 0
 
-            scale_grads_(model, exp_cfg.retaining_rate)  # apply intended lr
+            scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
 
     # ! get metrics
@@ -430,7 +428,7 @@ wandb.init(
     project="ret_" + project_name,
     group=group,
     name=run_name,
-    config=OmegaConf.to_container(exp_cfg),
+    config=OmegaConf.to_container(cfg),
 )
 optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 

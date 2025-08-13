@@ -34,7 +34,7 @@ Answer:"""
 
 
 # %%
-def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
+def eval_on(dataset, model, batch_size=4, subset=None, temperature="both"):
     assert model.config.name_or_path in [
         "meta-llama/Llama-3.2-1B",
         "meta-llama/Llama-3.2-3B",
@@ -53,7 +53,8 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
     if subset is not None:
         dataset = dataset[:subset]
 
-    acc = 0
+    acc_t0 = 0
+    acc_t1 = 0
     for i in range(0, len(dataset), batch_size):
         # print(i)
         batch = dataset[i : i + batch_size]
@@ -75,18 +76,25 @@ def eval_on(dataset, model, batch_size=4, subset=None, temperature=0):
         # assert pt.allclose(answer_probs.sum(dim=-1), pt.tensor(1.0, dtype=pt.bfloat16))
         _correct_answers = pt.tensor([ex["answer"] for ex in batch])
 
-        if temperature == 1:
-            correct_answer_probs = answer_probs[range(len(batch)), _correct_answers]
-            acc += correct_answer_probs.sum().item()
-        elif temperature == 0:
-            # for temperature=0
-            hits = answer_probs.argmax(dim=-1) == _correct_answers
-            acc += hits.sum().item()
-            # print(hits)
-        else:
-            raise ValueError(f"Not supported temperature: {temperature}")
+        # temperature=1
+        correct_answer_probs = answer_probs[range(len(batch)), _correct_answers]
+        acc_t1 += correct_answer_probs.sum().item()
+
+        # for temperature=0
+        hits = answer_probs.argmax(dim=-1) == _correct_answers
+        acc_t0 += hits.sum().item()
 
         del answer_probs, probs, last_token_logits, output
         pt.cuda.empty_cache()
 
-    return float(acc / len(dataset))
+    acc_t0 /= len(dataset)
+    acc_t1 /= len(dataset)
+
+    if temperature == "both":
+        return float(acc_t0), float(acc_t1)
+    elif temperature == 1:
+        return float(acc_t1)
+    elif temperature == 0:
+        return float(acc_t0)
+    else:
+        raise ValueError(f"Not supported temperature: {temperature}")
