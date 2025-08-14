@@ -1,0 +1,50 @@
+# general, unlikely to change
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+target_modules:
+    - gate_proj
+    - up_proj
+    - down_proj
+batch_size: 2  # 4 is the biggest we can go with 8b, on 40gb gpu
+
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
+dataset: jigsaw_threats
+
+max_num_epochs: 30
+
+retraining_rate: 1e-6
+retraining_epochs: 20
+
+# retaining_rate: 1e-5
+# retaining_loss_fn: cross_entropy
+# retain_on_context: false
+# retain_to_original: false
+# use_wikitext_as_retain: true
+
+# default experiment config
+algorithm: CIR
+loss_fn_name: correct_logit
+only_train_on_answer: true
+recalc_every_n_epochs: 5
+loss_budget: 1.01
+act_pca_num: 6
+grad_pca_num: 6
+cir_niter: 8
+use_wikitext_as_retain: false
+
+experiment_number: 0
+experiment_list:
+
+    - unlearning_rate: 2e-4
+       
+    - unlearning_rate: 2e-4
+      retaining_rate: 3e-6
+      retaining_loss_fn: kl_loss
+      retain_on_context: true
+      retain_to_original: true
+        
