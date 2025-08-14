@@ -6,6 +6,7 @@
 # but here, we aim for more simlicity and dataset generality
 
 import argparse
+import itertools
 import logging
 import time
 from copy import deepcopy
@@ -25,6 +26,7 @@ from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import get_conf_hash, repo_root
 from utils.loss_fns import cross_entropy, kl_loss
+from utils.plots import print_colored_tokens
 from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_modules
 
 # plt dark theme
@@ -39,7 +41,7 @@ args, remaining_args = parser.parse_known_args()
 
 with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
-# cfg = OmegaConf.load("../configs/context_nondisruption.yaml")  # for debugging
+# cfg = OmegaConf.load("../configs/8b_retaining.yaml")  # for debugging
 
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
@@ -294,6 +296,21 @@ if "retaining_rate" in cfg:
 for _, m in trainable_modules(model):
     m.kl_acc = pt.zeros_like(m.weight)
 
+
+# # * record mmlu batches and their per-token losses, to later see how they are disrupted
+# inspect_batches = []
+# for text in itertools.chain(
+#     [f"{q['contexts'][0]} {q['answer_core']}" for q in T.select(range(5))],
+#     # [f"{q['contexts'][0]} {q['answer_core']}" for q in mmlu_bio.select(range(5))],
+#     # [ex["text"] for ex in fineweb_bio.select(range(5))],
+#     [ex["text"] for ex in wikitext.select([0, 10, 20, 30, 40])],
+# ):
+#     batch = tokenizer(text, **cfg.tokenizer)
+#     model.zero_grad(set_to_none=True)
+#     output = model(**batch, output_hidden_states=True)
+#     token_losses = loss_fns.cross_entropy_per_token(output, batch).detach()
+#     inspect_batches.append((batch, token_losses))
+
 # %%
 # script name -> project
 # config name & hash -> group
@@ -427,13 +444,32 @@ for epoch in range(cfg.max_num_epochs):
             scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
 
+    # # % print the loss diffs for various batches
+    # batch_and_loss_diffs = []
+    # for batch, init_token_losses in inspect_batches:
+    #     model.zero_grad(set_to_none=True)
+    #     with pt.no_grad():
+    #         output = model(**batch, output_hidden_states=True)
+    #     token_losses = loss_fns.cross_entropy_per_token(output, batch).detach()
+    #     loss_diffs = token_losses - init_token_losses
+    #     batch_and_loss_diffs.append((batch, loss_diffs))
+    # # get the max loss diff
+    # max_loss_diff = max([loss_diffs.abs().max() for _, loss_diffs in batch_and_loss_diffs])
+    # print(f"{max_loss_diff=}")
+    # for batch, loss_diffs in batch_and_loss_diffs:
+    #     loss_diffs /= max_loss_diff
+    #     # note: they look weird, may be shifted by one token
+    #     print_colored_tokens(loss_diffs, batch, tokenizer)
+    # del batch_and_loss_diffs, max_loss_diff
+
     # ! get metrics
     res = get_metrics(model)
     wandb.log(res)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
         break
     # if res["forget_loss"] > 7.8:
-        # break
+    # break
+
 
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")
