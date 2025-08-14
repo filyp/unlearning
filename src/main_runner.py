@@ -225,9 +225,6 @@ elif cfg.dataset == "jigsaw_threats":
     ]
     control_batches = training_batches
 
-    if "retaining_rate" in cfg:
-        raise NotImplementedError("retaining not implemented for threats yet")
-
 
 if cfg.get("use_wikitext_as_retain", False):
     # * use wikitext as retain batches
