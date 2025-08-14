@@ -333,7 +333,10 @@ for epoch in range(cfg.max_num_epochs):
             output = model(**batch)
             loss_fn = getattr(loss_fns, cfg.loss_fn_name)
             answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
-            loss = loss_fn(output, batch, answer_mask)
+            if "clip_at" in cfg:
+                loss = loss_fn(output, batch, answer_mask, clip_at=cfg.clip_at)
+            else:
+                loss = loss_fn(output, batch, answer_mask)
             loss.backward()
 
             for n, m in trainable_modules(model):
@@ -429,6 +432,8 @@ for epoch in range(cfg.max_num_epochs):
     wandb.log(res)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
         break
+    # if res["forget_loss"] > 7.8:
+        # break
 
 wandb.finish()
 print(f"time taken: {time.time() - start_time:.2f}s")

@@ -13,7 +13,7 @@ batch_size: 2  # 4 is the biggest we can go with 8b, on 40gb gpu
 # model_id: meta-llama/Llama-3.2-3B
 # model_id: meta-llama/Llama-3.2-1B
 model_id: meta-llama/Llama-3.1-8B
-dataset: wmdp_bio
+dataset: wmdp_cyber
 eval_on_all_questions: false
 
 max_num_epochs: 30
@@ -42,7 +42,7 @@ experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 2e-4
-        
+       
     - unlearning_rate: 2e-4
       retaining_rate: 3e-6
       retaining_loss_fn: kl_loss
@@ -50,55 +50,17 @@ experiment_list:
       retain_to_original: true
         
     - unlearning_rate: 2e-4
-      retaining_rate: 1e-5
+      retaining_rate: 3e-5
       retaining_loss_fn: kl_loss
-      retain_on_context: false
+      retain_on_context: true
       retain_to_original: true
         
     - unlearning_rate: 2e-4
-      retaining_rate: 1e-5
+      retaining_rate: 3e-4
       retaining_loss_fn: kl_loss
-      retain_on_context: false
-      retain_to_original: false
-        
-    - unlearning_rate: 3e-4
-      retaining_rate: 1e-6
-      retaining_loss_fn: kl_loss
-      retain_on_context: false
-      retain_to_original: false
-
-    - unlearning_rate: 3e-4
-      max_num_epochs: 2
-        
-    - unlearning_rate: 3e-4
-      max_num_epochs: 3
-        
-    - unlearning_rate: 3e-4
-      retaining_rate: 1e-7
-      retaining_loss_fn: kl_loss
-      retain_on_context: false
-      retain_to_original: false
-
-    - unlearning_rate: 1e-3
-      model_id: meta-llama/Llama-3.2-1B
-
-    - unlearning_rate: 7e-7
-      algorithm: GA
-      loss_budget: 9999
-
-    - unlearning_rate: 7e-7
-      algorithm: GA
-      loss_budget: 1.2
-
-    - unlearning_rate: 2e-4
-      clip_at: 5
-        
-    - unlearning_rate: 2e-4
-      clip_at: 10
-        
-    - unlearning_rate: 2e-4
-      clip_at: -5
+      retain_on_context: true
+      retain_to_original: true
         
     - unlearning_rate: 1e-4
       max_num_epochs: 60
-        
+       
