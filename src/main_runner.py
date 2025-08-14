@@ -301,7 +301,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "13.08.2025"  # todo change back
+group = args.config_name + "_" + "14.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -343,11 +343,13 @@ for epoch in range(cfg.max_num_epochs):
                 grads_list[n].append(grads.to("cpu"))
 
         # ! calculate means and PCA components
+        _start_time = time.time()
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
         # todo ? could have some option for also disabling grad mean? or maybe not
         act_to_collapse = get_projections(acts_list, cfg.act_pca_num, cfg.cir_niter)
         grad_to_collapse = get_projections(grads_list, cfg.grad_pca_num, cfg.cir_niter)
+        print(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
 
     # ! one epoch
     model.train()
@@ -355,7 +357,7 @@ for epoch in range(cfg.max_num_epochs):
 
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
-        pt.cuda.empty_cache()
+        # pt.cuda.empty_cache()
         output = model(**batch, output_hidden_states=True)
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
         answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
@@ -380,7 +382,7 @@ for epoch in range(cfg.max_num_epochs):
                 assert m.weight.grad.shape == m.weight.shape
 
         scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
-        if cfg.normalize and ("max_norm" not in globals()):  # establish max_norm
+        if "max_norm" not in globals():  # establish max_norm
             max_norm = get_update_norm(model) * 2
             print(f"max_norm: {max_norm:7.2f}")
 
