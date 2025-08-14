@@ -88,6 +88,7 @@ experiment_list:
 
     - unlearning_rate: 7e-7
       algorithm: GA
+      # remember to also try neg_cross_entropy in the final one
       loss_budget: 1.2
 
     - unlearning_rate: 2e-4

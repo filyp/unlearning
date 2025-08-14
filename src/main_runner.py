@@ -41,7 +41,7 @@ args, remaining_args = parser.parse_known_args()
 
 with hydra.initialize(config_path="../configs", version_base="1.2"):
     cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
-# cfg = OmegaConf.load("../configs/8b_retaining.yaml")  # for debugging
+# cfg = OmegaConf.load("../configs/8b_threats.yaml")  # for debugging
 
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
@@ -191,13 +191,42 @@ elif cfg.dataset == "wmdp_cyber_deebs":
 
 elif cfg.dataset == "jigsaw_threats":
     jigsaw = load_jigsaw_dataset()
-    jigsaw_threats = jigsaw[jigsaw["threat"] == 1]
-    jigsaw_benign = jigsaw[jigsaw["toxic"] == 0]
+    jigsaw_threats = Dataset.from_pandas(jigsaw[jigsaw["threat"] == 1])
+    jigsaw_benign = Dataset.from_pandas(jigsaw[jigsaw["toxic"] == 0])
     # todo split jigsaw into T and V
     # here splitting into T and V makes less sense than with independent facts
     # but it's still nice to do
-    raise NotImplementedError("Jigsaw dataset not implemented yet")
-    retain_set = jigsaw_benign  # format batches properly
+    # raise NotImplementedError("Jigsaw dataset not implemented yet")
+    # retain_set = jigsaw_benign  # format batches properly
+
+    loss_eval_batches = [
+        tokenizer(x["comment_text"], **cfg.tokenizer)
+        for x in jigsaw_threats.shuffle(seed=42).batch(cfg.batch_size).select(range(16))
+    ]
+    training_batches = [
+        tokenizer(x["comment_text"], **cfg.tokenizer)
+        for x in jigsaw_threats.shuffle(seed=42)
+        .batch(cfg.batch_size)
+        .select(range(16, 16 + 64))
+    ]
+    benign_eval_batches = [
+        tokenizer(x["comment_text"], **cfg.tokenizer)
+        for x in jigsaw_benign.shuffle(seed=42)
+        .select(range(4096))  # otherwise batching is slow, going through full dataset
+        .batch(cfg.batch_size)
+        .select(range(16))
+    ]
+    retain_batches = [
+        tokenizer(x["comment_text"], **cfg.tokenizer)
+        for x in jigsaw_benign.shuffle(seed=42)
+        .select(range(4096))  # otherwise batching is slow, going through full dataset
+        .batch(cfg.batch_size)
+        .select(range(16, 16 + 64))
+    ]
+    control_batches = training_batches
+
+    if "retaining_rate" in cfg:
+        raise NotImplementedError("retaining not implemented for threats yet")
 
 
 if cfg.get("use_wikitext_as_retain", False):
@@ -224,11 +253,11 @@ def get_metrics(model):
 
     # ! eval retain
     res["retain_loss"] = 0
-    for batch in retain_batches[:8]:  # only 8, because it's less important
+    for batch in retain_batches[:16]:
         with pt.no_grad():
             output = model(**batch)
             res["retain_loss"] += cross_entropy(output, batch).item()
-    res["retain_loss"] /= 8
+    res["retain_loss"] /= 16
 
     # ! eval forget acc
     if "wmdp" in cfg.dataset:
@@ -246,6 +275,21 @@ def get_metrics(model):
                 res["context_loss"] += cross_entropy(output, batch, context_mask).item()
         res["forget_loss"] /= len(loss_eval_batches)
         res["context_loss"] /= len(loss_eval_batches)
+
+    elif cfg.dataset == "jigsaw_threats":
+        res["forget_loss"] = 0
+        for batch in loss_eval_batches:
+            with pt.no_grad():
+                output = model(**batch)
+                res["forget_loss"] += cross_entropy(output, batch).item()
+        res["forget_loss"] /= len(loss_eval_batches)
+
+        res["benign_loss"] = 0
+        for batch in benign_eval_batches:
+            with pt.no_grad():
+                output = model(**batch)
+                res["benign_loss"] += cross_entropy(output, batch).item()
+        res["benign_loss"] /= len(benign_eval_batches)
 
     print(res)
     return res
