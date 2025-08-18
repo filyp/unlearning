@@ -201,38 +201,38 @@ elif cfg.dataset == "jigsaw_threats":
 
     loss_eval_batches = [
         tokenizer(x["comment_text"], **cfg.tokenizer)
-        for x in jigsaw_threats.shuffle(seed=42).batch(cfg.batch_size).select(range(16))
+        for x in jigsaw_threats.shuffle(seed=42).batch(cfg.batch_size).select(range(32))
     ]
     training_batches = [
         tokenizer(x["comment_text"], **cfg.tokenizer)
         for x in jigsaw_threats.shuffle(seed=42)
         .batch(cfg.batch_size)
-        .select(range(16, 16 + 64))
+        .select(range(32, 32 + 128))
     ]
     benign_eval_batches = [
         tokenizer(x["comment_text"], **cfg.tokenizer)
         for x in jigsaw_benign.shuffle(seed=42)
         .select(range(4096))  # otherwise batching is slow, going through full dataset
         .batch(cfg.batch_size)
-        .select(range(16))
+        .select(range(32))
     ]
     retain_batches = [
         tokenizer(x["comment_text"], **cfg.tokenizer)
         for x in jigsaw_benign.shuffle(seed=42)
         .select(range(4096))  # otherwise batching is slow, going through full dataset
         .batch(cfg.batch_size)
-        .select(range(16, 16 + 64))
+        .select(range(32, 32 + 128))
     ]
     control_batches = training_batches
 
 
-if cfg.get("use_wikitext_as_retain", False):
-    # * use wikitext as retain batches
-    # this is a bad practice, only use it for trying to replicate RTT debouncing effect
-    retain_batches = [
-        tokenizer(x["text"], **cfg.tokenizer)
-        for x in _txts.select(range(16, 16 + len(training_batches)))
-    ]
+# if cfg.get("use_wikitext_as_retain", False):
+#     # * use wikitext as retain batches
+#     # this is a bad practice, only use it for trying to replicate RTT debouncing effect
+#     retain_batches = [
+#         tokenizer(x["text"], **cfg.tokenizer)
+#         for x in _txts.select(range(16, 16 + len(training_batches)))
+#     ]
 
 
 # %%
@@ -408,8 +408,8 @@ for epoch in range(cfg.max_num_epochs):
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
         # todo ? could have some option for also disabling grad mean? or maybe not
-        act_to_collapse = get_projections(acts_list, cfg.act_pca_num, cfg.cir_niter)
-        grad_to_collapse = get_projections(grads_list, cfg.grad_pca_num, cfg.cir_niter)
+        act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
+        grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
         print(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
 
     # ! one epoch
@@ -444,10 +444,9 @@ for epoch in range(cfg.max_num_epochs):
 
         scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
         if "max_norm" not in globals():  # establish max_norm
-            max_norm = get_update_norm(model) * 2
-            print(f"max_norm: {max_norm:7.2f}")
-
-        pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            max_norm = get_update_norm(model) * 1
+            print(f"max_norm: {max_norm:7.5f}")
+        pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.max_norm)
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
         if "retaining_rate" in cfg:

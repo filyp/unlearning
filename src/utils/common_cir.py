@@ -43,13 +43,21 @@ def get_last_grad(module, attn_mask):
     return grad[final_mask]
 
 
-def get_projections(vector_lists: dict[str, list[pt.Tensor]], num_pc=10, niter=16):
+def get_projections(vector_lists: dict[str, list[pt.Tensor]], num_proj=11, niter=16):
     # vectors can be either acts or grads
+    num_pc = num_proj - 1
     to_collapse = {}
     for n in list(vector_lists.keys()):
         pt.cuda.empty_cache()
         vectors_flattened = pt.cat(vector_lists.pop(n)).to("cuda").float()
         mean = vectors_flattened.mean(axis=0)
+        
+        if num_proj == 0:
+            to_collapse[n] = []
+            continue
+        elif num_proj == 1:
+            to_collapse[n] = mean.reshape(1, -1)
+            continue
 
         _, S, V = pt.pca_lowrank(vectors_flattened, num_pc, niter=niter)
         pca_components = V.T
