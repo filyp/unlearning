@@ -223,6 +223,12 @@ elif cfg.dataset == "jigsaw_threats":
         .batch(cfg.batch_size)
         .select(range(32, 32 + 128))
     ]
+    retraining_batches = [
+        tokenizer(x["comment_text"], **cfg.tokenizer)
+        for x in jigsaw_threats.shuffle(seed=42)
+        .batch(cfg.batch_size)
+        .select(range(32 + 128, 32 + 128 + 64))
+    ]
     control_batches = training_batches
 
 
@@ -359,7 +365,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "14.08.2025"  # todo change back
+group = args.config_name + "_" + "18.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -506,6 +512,8 @@ for epoch in range(cfg.max_num_epochs):
     res = get_metrics(model)
     wandb.log(res)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
+        break
+    if res["benign_loss"] > init_res["benign_loss"] * cfg.get("loss_budget", 1.01):
         break
     # if res["forget_loss"] > 7.8:
     # break

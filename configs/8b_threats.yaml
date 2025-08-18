@@ -18,8 +18,8 @@ dataset: jigsaw_threats
 # max_num_epochs: 100
 max_num_epochs: 30
 
-# retraining_rate: 1e-6
-# retraining_epochs: 20
+retraining_rate: 1e-6
+retraining_epochs: 30
 
 # retaining_rate: 1e-5
 # retaining_loss_fn: cross_entropy
@@ -35,6 +35,7 @@ recalc_every_n_epochs: 5
 loss_budget: 1.01
 cir_niter: 8
 max_norm: 0.1
+extra: null
 
 experiment_number: 0
 experiment_list:
@@ -46,8 +47,17 @@ experiment_list:
     # sanity check
     - unlearning_rate: 1e-6
       loss_fn_name: neg_cross_entropy
-      act_pca_num: 0
-      grad_pca_num: 0
+      act_proj_num: 0
+      grad_proj_num: 0
+
+    # sanity check
+    - unlearning_rate: 1e-6
+      loss_fn_name: neg_cross_entropy
+      act_proj_num: 6
+      grad_proj_num: 0
+
+
+
 
     - unlearning_rate: 1e-4
       act_pca_num: 2

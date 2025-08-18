@@ -53,7 +53,7 @@ def get_projections(vector_lists: dict[str, list[pt.Tensor]], num_proj=11, niter
         mean = vectors_flattened.mean(axis=0)
         
         if num_proj == 0:
-            to_collapse[n] = []
+            to_collapse[n] = pt.tensor([])
             continue
         elif num_proj == 1:
             to_collapse[n] = mean.reshape(1, -1)
