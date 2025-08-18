@@ -124,15 +124,9 @@ elif "deebs" in cfg.dataset:
 retain_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
     for x in retain_set.shuffle(seed=42)
-    .batch(cfg.batch_size)
+    .batch(cfg.retain_batch_size)
     .select(range(len(training_batches)))
 ]
-
-if cfg.control_on_training:
-    control_batches = training_batches
-else:
-    control_batches = retain_batches
-
 
 # %%
 def _get_loss(model, batches):
@@ -227,36 +221,12 @@ assert cfg.algorithm in ["CIR", "GA"]
 
 # % full training loop
 start_time = time.time()
+act_to_collapse = None
 for epoch in range(cfg.max_num_epochs):
     pt.cuda.empty_cache()
 
-    # ! recalculate projections
-    if cfg.algorithm == "CIR" and epoch % cfg.recalc_every_n_epochs == 0:
-        acts_list = {n: [] for n, _ in trainable_modules(model)}
-        grads_list = {n: [] for n, _ in trainable_modules(model)}
-
-        for i, batch in enumerate(control_batches):
-            # ! unlearning loss
-            model.zero_grad(set_to_none=True)
-            output = model(**batch)
-            answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
-            loss_fn = getattr(loss_fns, cfg.loss_fn_name)
-            loss = loss_fn(output, batch, answer_mask)
-            loss.backward()
-
-            for n, m in trainable_modules(model):
-                acts = get_last_act(m, batch["attention_mask"], cfg.ignore_bos)
-                grads = get_last_grad(m, batch["attention_mask"], cfg.ignore_bos)
-                acts_list[n].append(acts.to("cpu"))
-                grads_list[n].append(grads.to("cpu"))
-
-        # ! calculate means and PCA components
-        _start_time = time.time()
-        model.zero_grad(set_to_none=True)
-        pt.cuda.empty_cache()
-        act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
-        grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
-        logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
+    acts_list = {n: [] for n, _ in trainable_modules(model)}
+    grads_list = {n: [] for n, _ in trainable_modules(model)}
 
     # ! one epoch
     model.train()
@@ -266,8 +236,8 @@ for epoch in range(cfg.max_num_epochs):
         model.zero_grad(set_to_none=True)
         # pt.cuda.empty_cache()
         output = model(**batch, output_hidden_states=True)
-        loss_fn = getattr(loss_fns, cfg.loss_fn_name)
         answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
+        loss_fn = getattr(loss_fns, cfg.loss_fn_name)
         loss = loss_fn(output, batch, answer_mask)
         loss.backward()
 
@@ -276,7 +246,13 @@ for epoch in range(cfg.max_num_epochs):
             for n, m in trainable_modules(model):
                 acts = get_last_act(m, batch["attention_mask"], cfg.ignore_bos)
                 grads = get_last_grad(m, batch["attention_mask"], cfg.ignore_bos)
+                acts_list[n].append(acts.clone().to("cpu"))
+                grads_list[n].append(grads.clone().to("cpu"))
                 assert len(acts.shape) == len(grads.shape) == 2
+
+                if act_to_collapse is None:
+                    assert epoch == 0
+                    continue
 
                 # ! proj out the means and PCA components
                 for comp in act_to_collapse[n]:
@@ -288,12 +264,15 @@ for epoch in range(cfg.max_num_epochs):
                 m.weight.grad = pt.einsum("ti,tj->ij", grads, acts)
                 assert m.weight.grad.shape == m.weight.shape
 
+            if act_to_collapse is None:
+                continue
+
         scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
 
-        # if "max_norm" not in globals():  # establish max_norm
-        #     max_norm = get_update_norm(model) * 1
-        #     print(f"max_norm: {max_norm:7.5f}")
-        # pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.max_norm)
+        if "max_norm" not in globals():  # establish max_norm
+            max_norm = get_update_norm(model) * 1
+            print(f"max_norm: {max_norm:7.5f}")
+        pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
 
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
@@ -331,6 +310,15 @@ for epoch in range(cfg.max_num_epochs):
 
             scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
+
+    if cfg.algorithm == "CIR":
+        # ! calculate means and PCA components
+        # _start_time = time.time()
+        model.zero_grad(set_to_none=True)
+        pt.cuda.empty_cache()
+        act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
+        grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
+        # logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
 
     # ! get metrics
     res = get_metrics(model)
