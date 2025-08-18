@@ -36,6 +36,7 @@ loss_budget: 1.01
 cir_niter: 8
 max_norm: 0.1
 extra: null
+ignore_bos: true
 
 experiment_number: 0
 experiment_list:
@@ -44,17 +45,46 @@ experiment_list:
       algorithm: GA
       loss_fn_name: neg_cross_entropy
        
-    # sanity check
-    - unlearning_rate: 1e-6
+    # # sanity check
+    # - unlearning_rate: 1e-6
+    #   loss_fn_name: neg_cross_entropy
+    #   act_proj_num: 0
+    #   grad_proj_num: 0
+    #   ignore_bos: false
+
+    - unlearning_rate: 1e-4
       loss_fn_name: neg_cross_entropy
       act_proj_num: 0
       grad_proj_num: 0
 
-    # sanity check
-    - unlearning_rate: 1e-6
+    - unlearning_rate: 1e-4
+      loss_fn_name: neg_cross_entropy
+      act_proj_num: 1
+      grad_proj_num: 0
+
+    - unlearning_rate: 1e-4
       loss_fn_name: neg_cross_entropy
       act_proj_num: 6
       grad_proj_num: 0
+
+    - unlearning_rate: 1e-4
+      loss_fn_name: neg_cross_entropy
+      act_proj_num: 6
+      grad_proj_num: 1
+
+    - unlearning_rate: 1e-4
+      loss_fn_name: correct_logit
+      act_proj_num: 0
+      grad_proj_num: 0
+
+    - unlearning_rate: 1e-4
+      loss_fn_name: correct_logit
+      act_proj_num: 1
+      grad_proj_num: 0
+
+
+
+
 
 
 

@@ -15,6 +15,7 @@ from pathlib import Path
 import hydra
 import matplotlib.pyplot as plt
 import torch as pt
+from IPython import get_ipython
 from datasets import Dataset, concatenate_datasets, load_dataset
 from omegaconf import DictConfig, OmegaConf, open_dict
 from transformers import AutoTokenizer
@@ -39,10 +40,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config-name", default="cir")
 args, remaining_args = parser.parse_known_args()
 
-with hydra.initialize(config_path="../configs", version_base="1.2"):
-    cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
-# cfg = OmegaConf.load("../configs/8b_threats.yaml")  # for debugging
-
+if get_ipython() is None:
+    with hydra.initialize(config_path="../configs", version_base="1.2"):
+        cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
+else:
+    print("Running in Jupyter")
+    cfg = OmegaConf.load("../configs/8b_threats.yaml")  # for debugging
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
 
@@ -404,8 +407,8 @@ for epoch in range(cfg.max_num_epochs):
             loss.backward()
 
             for n, m in trainable_modules(model):
-                acts = get_last_act(m, batch["attention_mask"])
-                grads = get_last_grad(m, batch["attention_mask"])
+                acts = get_last_act(m, batch["attention_mask"], cfg.ignore_bos)
+                grads = get_last_grad(m, batch["attention_mask"], cfg.ignore_bos)
                 acts_list[n].append(acts.to("cpu"))
                 grads_list[n].append(grads.to("cpu"))
 
@@ -434,8 +437,8 @@ for epoch in range(cfg.max_num_epochs):
         # ! here we modify the grad
         if cfg.algorithm == "CIR":
             for n, m in trainable_modules(model):
-                acts = get_last_act(m, batch["attention_mask"])
-                grads = get_last_grad(m, batch["attention_mask"])
+                acts = get_last_act(m, batch["attention_mask"], cfg.ignore_bos)
+                grads = get_last_grad(m, batch["attention_mask"], cfg.ignore_bos)
                 assert len(acts.shape) == len(grads.shape) == 2
 
                 # ! proj out the means and PCA components
@@ -513,8 +516,9 @@ for epoch in range(cfg.max_num_epochs):
     wandb.log(res)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
         break
-    if res["benign_loss"] > init_res["benign_loss"] * cfg.get("loss_budget", 1.01):
-        break
+    if "benign_loss" in res:
+        if res["benign_loss"] > init_res["benign_loss"] * cfg.get("loss_budget", 1.01):
+            break
     # if res["forget_loss"] > 7.8:
     # break
 
