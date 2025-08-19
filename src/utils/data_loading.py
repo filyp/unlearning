@@ -110,14 +110,14 @@ def load_batches(corpus, model_id, batch_size=4, max_length=128):
     return batches
 
 
-def load_batches_from_pairs_set(dataset, cfg, range_=range(0, 7)):
+def load_batches_from_pairs_set(dataset, cfg):
     batch_size = cfg.train_batch_size
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
     tokenizer.pad_token = tokenizer.eos_token
 
     beginnings = []
     fulls = []
-    for idx in range_:
+    for idx in range(cfg.num_examples_per_question):
         for q in dataset:
             beginnings.append(q["contexts"][idx])
             fulls.append(f"{q['contexts'][idx]} {q['answer_core']}")

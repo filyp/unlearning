@@ -8,17 +8,18 @@ target_modules:
     - gate_proj
     - up_proj
     - down_proj
-batch_size: 8  # with 8b on 40gb gpu, 2 or 4 is the max
-train_batch_size: 16  # can be higher because batches are usually shorter
-num_eval_batches: 16  # will make it slower, but for final plots make it bigger
+batch_size: 4  # with 8b on 40gb gpu, 2 or 4 is the max
+train_batch_size: 8  # can be higher because batches are usually shorter
+num_eval_batches: 8  # will make it slower, but for final plots make it bigger
 
 # model_id: meta-llama/Llama-3.2-3B
-model_id: meta-llama/Llama-3.2-1B
-# model_id: meta-llama/Llama-3.1-8B  # todo use 8b
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
 
 dataset: wmdp_cyber_pairs
 # dataset: wmdp_cyber_deebs
 # dataset: wmdp_cyber_simple
+num_examples_per_question: 7
 
 max_num_epochs: 30
 
@@ -38,14 +39,10 @@ experiment_list:
 
     - unlearning_rate: 1e-3
       act_proj_num: 6
-      grad_proj_num: 1
-
-    - unlearning_rate: 3e-3
-      act_proj_num: 6
       grad_proj_num: 0
       only_train_on_answer: false
 
-    - unlearning_rate: 3e-3
+    - unlearning_rate: 1e-3
       act_proj_num: 6
       grad_proj_num: 0
       only_train_on_answer: true
@@ -54,6 +51,26 @@ experiment_list:
       act_proj_num: 6
       grad_proj_num: 0
       only_train_on_answer: false
+      loss_fn_name: correct_logit
+
+    - unlearning_rate: 0.5e-3
+      act_proj_num: 6
+      grad_proj_num: 0
+      only_train_on_answer: true
+      loss_fn_name: correct_logit
+      num_examples_per_question: 3
+
+    - unlearning_rate: 1e-3
+      act_proj_num: 6
+      grad_proj_num: 0
+      dataset: wmdp_cyber_deebs
+      train_batch_size: 2  # 4 is too much for Deeb's dataset
+
+    - unlearning_rate: 0.5e-3
+      act_proj_num: 6
+      grad_proj_num: 2
+      dataset: wmdp_cyber_deebs
+      train_batch_size: 2  # 4 is too much for Deeb's dataset
       loss_fn_name: correct_logit
 
     # - unlearning_rate: 1e-6

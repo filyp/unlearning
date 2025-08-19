@@ -105,8 +105,8 @@ logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
 if "pairs" in cfg.dataset:
     # note: dataset comparison experiment uses 3, not 7
-    training_batches = load_batches_from_pairs_set(T_and_V, cfg, range(0, 7))
-    retraining_batches = load_batches_from_pairs_set(T, cfg, range(0, 7))
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg)
+    retraining_batches = load_batches_from_pairs_set(T, cfg)
 
 elif "deebs" in cfg.dataset:
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
@@ -127,7 +127,7 @@ retain_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
     for x in retain_set.shuffle(seed=42)
     .batch(cfg.batch_size)
-    .select(range(len(training_batches)))
+    .select(range(max(len(training_batches), cfg.num_eval_batches)))
 ]
 recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
 
@@ -273,6 +273,7 @@ for epoch in range(cfg.max_num_epochs):
                 assert m.weight.grad.shape == m.weight.shape
 
             if act_to_collapse is None:
+                assert epoch == 0
                 continue
 
         scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
@@ -327,6 +328,8 @@ for epoch in range(cfg.max_num_epochs):
         act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
         grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
         # logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
+        if epoch == 0:
+            continue  # no need to report metrics, because nothing has changed
 
     # ! get metrics
     res = get_metrics(model)
