@@ -15,6 +15,7 @@ import argparse
 import itertools
 import logging
 import time
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
@@ -101,8 +102,9 @@ eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
 if "pairs" in cfg.dataset:
-    training_batches = load_batches_from_pairs_set(T_and_V, cfg)
-    retraining_batches = load_batches_from_pairs_set(T, cfg)
+    only_ans = "only_ans" in cfg.dataset
+    training_batches = load_batches_from_pairs_set(T_and_V, cfg, only_ans)
+    retraining_batches = load_batches_from_pairs_set(T, cfg, only_ans)
 
 elif "simple" in cfg.dataset:
     training_batches = load_batches_from_simple_set(T_and_V, cfg)
@@ -125,11 +127,25 @@ elif "deebs" in cfg.dataset:
 
 retain_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
-    for x in retain_set.shuffle(seed=42)
-    .batch(cfg.batch_size)
-    .select(range(max(len(training_batches), cfg.num_eval_batches)))
+    for x in retain_set.shuffle(seed=42).batch(cfg.batch_size)
+    # .select(range(max(len(training_batches), cfg.num_eval_batches)))
 ]
 recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
+
+
+if cfg.mask_n_most_common_tokens is not None:
+    # count the most common tokens in the retain set
+    counter = Counter()
+    for b in retain_batches:
+        counter.update(b["input_ids"].flatten().tolist())
+    nt = cfg.mask_n_most_common_tokens
+    most_common_tokens = pt.tensor([t for t, _ in counter.most_common(nt)])
+    # mask out the common tokens
+    for b in training_batches:
+        b["answer_mask"] = ~pt.isin(b["input_ids"], most_common_tokens)
+
+    coverage = sum(c for _, c in counter.most_common(nt)) / sum(counter.values())
+    logging.info(f"coverage: {coverage:.2f}")
 
 
 # %%
@@ -153,10 +169,10 @@ def get_metrics(model):
     # * eval forget acc
     res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
 
-    n = cfg.num_eval_batches
-    res["wikitext_loss"] = _get_loss(model, wikitext_batches[:n])
-    res["retain_loss"] = _get_loss(model, retain_batches[:n])
-    res["training_loss"] = _get_loss(model, training_batches[:n])
+    nb = cfg.num_eval_batches
+    res["wikitext_loss"] = _get_loss(model, wikitext_batches[:nb])
+    res["retain_loss"] = _get_loss(model, retain_batches[:nb])
+    res["training_loss"] = _get_loss(model, training_batches[:nb])
     res["recall_loss"] = _get_loss(model, recall_batches, use_answer_mask=True)
 
     logging.info(res)
@@ -244,7 +260,7 @@ for epoch in range(cfg.max_num_epochs):
         model.zero_grad(set_to_none=True)
         # pt.cuda.empty_cache()
         output = model(**batch, output_hidden_states=True)
-        answer_mask = batch["answer_mask"] if cfg.only_train_on_answer else None
+        answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
         loss = loss_fn(output, batch, answer_mask)
         loss.backward()
@@ -286,14 +302,11 @@ for epoch in range(cfg.max_num_epochs):
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
         if "retaining_rate" in cfg:
-            if cfg.retain_on_context:
-                # todo it would be possible to reusethe forward pass
-                #     do it in the optimized version, but here, be general
-                _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
-            else:
-                # use retain_batches
-                batch = retain_batches[i % len(retain_batches)]
-                _mask = batch["attention_mask"].bool()
+            # if cfg.retain_on_context:
+            # _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+
+            batch = retain_batches[i % len(retain_batches)]
+            _mask = batch["attention_mask"].bool()
 
             model.zero_grad(set_to_none=True)
             pt.cuda.empty_cache()
