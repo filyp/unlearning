@@ -8,9 +8,9 @@ target_modules:
     - gate_proj
     - up_proj
     - down_proj
-# batch_size: 2  # 4 is the biggest we can go with 8b, on 40gb gpu
-batch_size: 16
-retain_batch_size: 8
+batch_size: 8  # with 8b on 40gb gpu, 2 or 4 is the max
+train_batch_size: 16  # can be higher because batches are usually shorter
+num_eval_batches: 16  # will make it slower, but for final plots make it bigger
 
 # model_id: meta-llama/Llama-3.2-3B
 model_id: meta-llama/Llama-3.2-1B
@@ -31,6 +31,7 @@ loss_budget: 1.01
 cir_niter: 8
 comment: null
 ignore_bos: true
+eval_on_all_questions: true
 
 experiment_number: 0
 experiment_list:
@@ -44,10 +45,10 @@ experiment_list:
       grad_proj_num: 0
       only_train_on_answer: false
 
-    - unlearning_rate: 3e-4
-      act_proj_num: 0
+    - unlearning_rate: 3e-3
+      act_proj_num: 6
       grad_proj_num: 0
-      only_train_on_answer: false
+      only_train_on_answer: true
 
     - unlearning_rate: 1e-3
       act_proj_num: 6

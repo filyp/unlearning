@@ -110,9 +110,9 @@ def load_batches(corpus, model_id, batch_size=4, max_length=128):
     return batches
 
 
-def load_batches_from_pairs_set(dataset, conf, range_=range(0, 7)):
-    batch_size = conf.batch_size
-    tokenizer = AutoTokenizer.from_pretrained(conf.model_id)
+def load_batches_from_pairs_set(dataset, cfg, range_=range(0, 7)):
+    batch_size = cfg.train_batch_size
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
     tokenizer.pad_token = tokenizer.eos_token
 
     beginnings = []
@@ -126,8 +126,39 @@ def load_batches_from_pairs_set(dataset, conf, range_=range(0, 7)):
     for i in range(0, len(beginnings), batch_size):
         b_txt = beginnings[i : i + batch_size]
         f_txt = fulls[i : i + batch_size]
-        beginning_batch = tokenizer(b_txt, **conf.tokenizer)
-        full_batch = tokenizer(f_txt, **conf.tokenizer)
+        beginning_batch = tokenizer(b_txt, **cfg.tokenizer)
+        full_batch = tokenizer(f_txt, **cfg.tokenizer)
+        full_batch["answer_mask"] = prepare_answer_mask(beginning_batch, full_batch)
+
+        batches.append(full_batch)
+
+    return batches
+
+
+def load_recall_batches(questions, cfg, batch_size=1):
+    # batch_size 1 if slower but recommended, because it means we will first average
+    # loss per answer and then across answers, which is more stable given some answers
+    # are shorter than others
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    beginnings = []
+    fulls = []
+    for q in questions:
+        beginning = f"""\
+    {q["question"].strip()}
+    Answer:"""
+        ending = q["choices"][q["answer"]]
+        full = f"{beginning} {ending}"
+        beginnings.append(beginning)
+        fulls.append(full)
+
+    batches = []
+    for i in range(0, len(beginnings), batch_size):
+        b_txt = beginnings[i : i + batch_size]
+        f_txt = fulls[i : i + batch_size]
+        beginning_batch = tokenizer(b_txt, **cfg.tokenizer)
+        full_batch = tokenizer(f_txt, **cfg.tokenizer)
         full_batch["answer_mask"] = prepare_answer_mask(beginning_batch, full_batch)
 
         batches.append(full_batch)

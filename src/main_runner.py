@@ -50,8 +50,8 @@ if get_ipython() is None:
     with hydra.initialize(config_path="../configs", version_base="1.2"):
         cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 else:
-    print("Running in Jupyter")
-    cfg = OmegaConf.load("../configs/8b_threats.yaml")  # for debugging
+    logging.info("Running in Jupyter")
+    cfg = OmegaConf.load("../configs/datasets2.yaml")  # for debugging
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
 
@@ -59,7 +59,7 @@ with open_dict(cfg):
 set_seeds(42)
 
 num_gpus = pt.cuda.device_count()
-print(f"Number of GPUs available: {num_gpus}")
+logging.info(f"Number of GPUs available: {num_gpus}")
 if num_gpus == 1:
     pt.set_default_device("cuda")
     device_main = pt.device("cuda")
@@ -74,9 +74,9 @@ tokenizer.pad_token = tokenizer.eos_token
 
 # ! load wikitext batches
 wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
-_txts = wikitext.shuffle(seed=42).batch(cfg.batch_size)
 wikitext_batches = [
-    tokenizer(x["text"], **cfg.tokenizer) for x in _txts.select(range(16))
+    tokenizer(x["text"], **cfg.tokenizer)
+    for x in wikitext.shuffle(seed=42).batch(cfg.batch_size)
 ]
 
 
@@ -93,13 +93,15 @@ elif "cyber" in cfg.dataset:
     # V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
     T = load_local(f"wmdp_deduped_cyber/dev_T_corpus.jsonl")
     V = load_local(f"wmdp_deduped_cyber/dev_V_corpus.jsonl")
+else:
+    raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
 
 T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
 V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
-print(f"{len(T)=}, {len(V)=}")
 T_and_V = concatenate_datasets([T, V])
 eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
+logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
 if "pairs" in cfg.dataset:
     # note: dataset comparison experiment uses 3, not 7
@@ -114,7 +116,7 @@ elif "deebs" in cfg.dataset:
 
     training_batches = [
         tokenizer(texts, **cfg.tokenizer)
-        for texts in t_and_v_txts.shuffle(seed=42).batch(cfg.batch_size)["text"]
+        for texts in t_and_v_txts.shuffle(seed=42).batch(cfg.train_batch_size)["text"]
     ]
     retraining_batches = [
         tokenizer(texts, **cfg.tokenizer)
@@ -124,17 +126,23 @@ elif "deebs" in cfg.dataset:
 retain_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
     for x in retain_set.shuffle(seed=42)
-    .batch(cfg.retain_batch_size)
+    .batch(cfg.batch_size)
     .select(range(len(training_batches)))
 ]
+recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
+
 
 # %%
-def _get_loss(model, batches):
+def _get_loss(model, batches, use_answer_mask=False):
     loss_acc = 0
     for batch in batches:
         with pt.no_grad():
             output = model(**batch)
-            loss_acc += cross_entropy(output, batch).item()
+            if use_answer_mask:
+                answer_mask = batch["answer_mask"]
+                loss_acc += cross_entropy(output, batch, answer_mask).item()
+            else:
+                loss_acc += cross_entropy(output, batch).item()
     return loss_acc / len(batches)
 
 
@@ -145,11 +153,11 @@ def get_metrics(model):
     # * eval forget acc
     res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
 
-    res["wikitext_loss"] = _get_loss(model, wikitext_batches)
-    res["retain_loss"] = _get_loss(model, retain_batches[:16])
-    res["training_loss"] = _get_loss(model, training_batches[:16])
-    # todo recall loss on MCQ but when asking to genreate the answer
-    #     and I guess for control also the false answers? or maybe we don't care about this, only about general disruption
+    n = cfg.num_eval_batches
+    res["wikitext_loss"] = _get_loss(model, wikitext_batches[:n])
+    res["retain_loss"] = _get_loss(model, retain_batches[:n])
+    res["training_loss"] = _get_loss(model, training_batches[:n])
+    res["recall_loss"] = _get_loss(model, recall_batches, use_answer_mask=True)
 
     logging.info(res)
     return res
@@ -203,7 +211,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "18.08.2025"  # todo change back
+group = args.config_name + "_" + "19.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -271,7 +279,7 @@ for epoch in range(cfg.max_num_epochs):
 
         if "max_norm" not in globals():  # establish max_norm
             max_norm = get_update_norm(model) * 1
-            print(f"max_norm: {max_norm:7.5f}")
+            logging.info(f"max_norm: {max_norm:7.5f}")
         pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
 
         unit_optimizer.step()  # unit_optimizer has lr=1.0
@@ -327,7 +335,7 @@ for epoch in range(cfg.max_num_epochs):
         break
 
 wandb.finish()
-print(f"time taken: {time.time() - start_time:.2f}s")
+logging.info(f"time taken: {time.time() - start_time:.2f}s")
 
 
 # %% retraining on T
