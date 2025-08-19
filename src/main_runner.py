@@ -84,13 +84,17 @@ wikitext_batches = [
 _corpus_version = "corpus_simple" if "simple" in cfg.dataset else "corpus"
 if "bio" in cfg.dataset:
     retain_set = load_fineweb_bio_corpus()
-    T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
+    # T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
+    # V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_bio/T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_bio/V_{_corpus_version}.jsonl")
 
 elif "cyber" in cfg.dataset:
     retain_set = load_fineweb_tech_corpus()
-    T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
+    # T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
+    # V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_cyber/T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/V_{_corpus_version}.jsonl")
 else:
     raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
@@ -127,7 +131,7 @@ elif "deebs" in cfg.dataset:
 
 retain_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
-    for x in retain_set.shuffle(seed=42).batch(cfg.batch_size)
+    for x in retain_set.shuffle(seed=42).batch(cfg.retain_batch_size)
     # .select(range(max(len(training_batches), cfg.num_eval_batches)))
 ]
 recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
@@ -143,6 +147,8 @@ if cfg.mask_n_most_common_tokens is not None:
     # mask out the common tokens
     for b in training_batches:
         b["answer_mask"] = ~pt.isin(b["input_ids"], most_common_tokens)
+        # AND with the attention mask, just in case
+        b["answer_mask"] = b["answer_mask"] & b["attention_mask"].bool()
 
     coverage = sum(c for _, c in counter.most_common(nt)) / sum(counter.values())
     logging.info(f"coverage: {coverage:.2f}")
@@ -205,10 +211,10 @@ unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 # * cache the activations for context undisruption
 if "retaining_rate" in cfg:
     model.train()
-    if cfg.get("retain_on_context", False):
+    if cfg.get("retain_on_neg_mask", False):
         _act_cache_batches = training_batches
     else:
-        _act_cache_batches = retain_batches
+        _act_cache_batches = retain_batches[:len(training_batches)]
 
     for batch in _act_cache_batches:
         with pt.no_grad():
@@ -258,7 +264,7 @@ for epoch in range(cfg.max_num_epochs):
 
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
-        # pt.cuda.empty_cache()
+        pt.cuda.empty_cache()
         output = model(**batch, output_hidden_states=True)
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
@@ -302,20 +308,26 @@ for epoch in range(cfg.max_num_epochs):
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
         if "retaining_rate" in cfg:
-            # if cfg.retain_on_context:
-            # _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
-
-            batch = retain_batches[i % len(retain_batches)]
-            _mask = batch["attention_mask"].bool()
+            if cfg.get("retain_on_neg_mask", False):
+                # todo it would be possible to reusethe forward pass
+                #     do it in the optimized version, but here, be general
+                assert "answer_mask" in batch
+                _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
+            else:
+                # use retain_batches
+                batch = retain_batches[i]
+                _mask = batch["attention_mask"].bool()
 
             model.zero_grad(set_to_none=True)
             pt.cuda.empty_cache()
-            output = model(**batch, output_hidden_states=True)
+            # output = model(**batch, output_hidden_states=True)
+            output = model(**batch)
 
             if cfg.retaining_loss_fn == "kl_loss":
+                assert "original_last_act" in batch
                 loss = kl_loss(output, batch, model, _mask)
             elif cfg.retaining_loss_fn == "cross_entropy":
-                assert not cfg.retain_on_context, "not implemented"
+                assert not cfg.retain_on_neg_mask, "not implemented"
                 loss = cross_entropy(output, batch)
 
             loss.backward()
@@ -323,6 +335,7 @@ for epoch in range(cfg.max_num_epochs):
             if cfg.get("retain_to_original", False):
                 # * only allow reverting retain updates
                 for n, _ in trainable_modules(model):
+                    pt.cuda.empty_cache()
                     w = model.get_submodule(n).weight
                     orig_w = original_weights[n].to(device_main, dtype=pt.bfloat16)
                     # filter out if diff=0 too:

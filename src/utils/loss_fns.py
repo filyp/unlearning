@@ -18,7 +18,7 @@ def _normalize_logits(logits):
 
 
 def kl_loss(output, batch, model, mask):
-
+    mask = mask.bool()
     logits = output.logits[mask]
     # we store acts and recalculate logits to save memory
     original_last_act = batch["original_last_act"].to("cuda")[mask]

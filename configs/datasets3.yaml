@@ -10,7 +10,7 @@ target_modules:
     - down_proj
 batch_size: 4  # with 8b on 40gb gpu, 2 or 4 is the max
 retain_batch_size: 2
-train_batch_size: 8  # can be higher because batches are usually shorter
+train_batch_size: 6  # can be higher because batches are usually shorter
 num_eval_batches: 8  # will make it slower, but for final plots make it bigger
 
 # model_id: meta-llama/Llama-3.2-3B
@@ -25,6 +25,10 @@ num_examples_per_question: 3
 
 max_num_epochs: 30
 
+retraining_rate: 1e-6
+retraining_epochs: 30
+eval_on_all_questions: false
+
 # default experiment config
 algorithm: CIR
 loss_fn_name: correct_logit
@@ -33,22 +37,22 @@ loss_budget: 1.01
 cir_niter: 8
 comment: null
 ignore_bos: true
-eval_on_all_questions: true  # best to just use it when not retraining
-mask_n_most_common_tokens: null
+# mask_n_most_common_tokens: null
+mask_n_most_common_tokens: 50
+# eval_on_all_questions: true  # best to just use it when not retraining
 
 experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 1e-3
-      act_proj_num: 6
+      act_proj_num: 10
+      # act_proj_num: 6
       grad_proj_num: 1
-      num_examples_per_question: 3
-      loss_fn_name: neg_cross_entropy
+      # eval_on_all_questions: true
 
     - unlearning_rate: 1e-3
       act_proj_num: 6
       grad_proj_num: 1
-      num_examples_per_question: 3
       retaining_rate: 1e-5
       retaining_loss_fn: kl_loss
       retain_to_original: false
@@ -56,7 +60,6 @@ experiment_list:
     - unlearning_rate: 1e-3
       act_proj_num: 6
       grad_proj_num: 1
-      num_examples_per_question: 3
       retaining_rate: 3e-5
       retaining_loss_fn: kl_loss
       retain_to_original: true
@@ -64,41 +67,16 @@ experiment_list:
     - unlearning_rate: 1e-3
       act_proj_num: 6
       grad_proj_num: 1
-      num_examples_per_question: 3
       retaining_rate: 3e-5
       retaining_loss_fn: kl_loss
       retain_to_original: true
-      mask_n_most_common_tokens: 50
-      loss_fn_name: neg_cross_entropy
-
-    - unlearning_rate: 1e-3
-      act_proj_num: 6
-      grad_proj_num: 1
-      num_examples_per_question: 3
-      retaining_rate: 3e-5
-      retaining_loss_fn: kl_loss
-      retain_to_original: true
-      mask_n_most_common_tokens: 50
       retain_on_neg_mask: true
-      loss_fn_name: neg_cross_entropy
 
-    - unlearning_rate: 1e-4
-      act_proj_num: 6
-      grad_proj_num: 1
-      num_examples_per_question: 3
-      ignore_bos: false
-
-
-
-
-
-
-
-
-
-
-
-
+    # - unlearning_rate: 1e-4
+    #   act_proj_num: 6
+    #   grad_proj_num: 1
+    #   num_examples_per_question: 3
+    #   ignore_bos: false
 
     # - unlearning_rate: 0.5e-3
     #   act_proj_num: 6
