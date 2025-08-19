@@ -80,19 +80,16 @@ wikitext_batches = [
 ]
 
 
+_corpus_version = "corpus_simple" if "simple" in cfg.dataset else "corpus"
 if "bio" in cfg.dataset:
     retain_set = load_fineweb_bio_corpus()
-    # T = load_local(f"wmdp_deduped_bio/T_corpus.jsonl")
-    # V = load_local(f"wmdp_deduped_bio/V_corpus.jsonl")
-    T = load_local(f"wmdp_deduped_bio/dev_T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_bio/dev_V_corpus.jsonl")
+    T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
 
 elif "cyber" in cfg.dataset:
     retain_set = load_fineweb_tech_corpus()
-    # T = load_local(f"wmdp_deduped_cyber/T_corpus.jsonl")
-    # V = load_local(f"wmdp_deduped_cyber/V_corpus.jsonl")
-    T = load_local(f"wmdp_deduped_cyber/dev_T_corpus.jsonl")
-    V = load_local(f"wmdp_deduped_cyber/dev_V_corpus.jsonl")
+    T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
 else:
     raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
@@ -104,9 +101,12 @@ eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
 
 if "pairs" in cfg.dataset:
-    # note: dataset comparison experiment uses 3, not 7
     training_batches = load_batches_from_pairs_set(T_and_V, cfg)
     retraining_batches = load_batches_from_pairs_set(T, cfg)
+
+elif "simple" in cfg.dataset:
+    training_batches = load_batches_from_simple_set(T_and_V, cfg)
+    retraining_batches = load_batches_from_simple_set(T, cfg)
 
 elif "deebs" in cfg.dataset:
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")

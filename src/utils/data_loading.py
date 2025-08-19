@@ -164,3 +164,25 @@ def load_recall_batches(questions, cfg, batch_size=1):
         batches.append(full_batch)
 
     return batches
+
+
+def load_batches_from_simple_set(dataset, cfg):
+    batch_size = cfg.train_batch_size
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    texts = []
+    for idx in range(cfg.num_examples_per_question):
+        for q in dataset:
+            texts.append(q["sentences"][idx])
+
+    batches = []
+    for i in range(0, len(texts), batch_size):
+        txt = texts[i : i + batch_size]
+        batch = tokenizer(txt, **cfg.tokenizer)
+        # batch["answer_mask"] = ...
+        batches.append(batch)
+
+    return batches
+
+
