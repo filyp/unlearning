@@ -198,6 +198,7 @@ for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
 if cfg.get("retain_to_original", False):
+    assert num_gpus == 2
     original_weights = {
         n: m.weight.clone().detach().to(device_storage)
         # n: m.weight.clone().detach().to(pt.float8_e4m3fn).to(device_storage)
