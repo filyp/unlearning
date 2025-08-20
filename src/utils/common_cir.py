@@ -51,7 +51,10 @@ def get_projections(vector_lists: dict[str, list[pt.Tensor]], num_proj=11, niter
     to_collapse = {}
     for n in list(vector_lists.keys()):
         pt.cuda.empty_cache()
-        vectors_flattened = pt.cat(vector_lists.pop(n)).to("cuda").float()
+        cached_vectors = vector_lists.pop(n)
+        if not cached_vectors:
+            continue
+        vectors_flattened = pt.cat(cached_vectors).to("cuda").float()
         mean = vectors_flattened.mean(axis=0)
         
         if num_proj == 0:

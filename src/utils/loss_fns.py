@@ -92,6 +92,7 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
         mask = answer_mask
     else:
         mask = batch["attention_mask"]
+    mask = mask.bool()
 
     acts = output.hidden_states[cfg.cb_layer_idx][mask].float()
     org_acts = batch["act_for_cb"].to(acts.device)[mask].float()

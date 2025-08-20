@@ -115,6 +115,7 @@ def get_update_norm(model):
         sum(
             m.weight.grad.to(pt.float32).norm() ** 2
             for _, m in trainable_modules(model)
+            if m.weight.grad is not None
         )
         ** 0.5
     )
