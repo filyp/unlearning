@@ -95,7 +95,8 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
     mask = mask.bool()
 
     acts = output.hidden_states[cfg.cb_layer_idx][mask].float()
-    org_acts = batch["act_for_cb"].to(acts.device)[mask].float()
+    org_acts = batch["act_for_cb"].to(acts.device).float()
+    assert acts.shape == org_acts.shape
 
     dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
     return dotproducts.clip(min=0).mean()

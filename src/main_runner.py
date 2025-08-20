@@ -30,6 +30,7 @@ from transformers import AutoTokenizer
 import wandb
 from utils import loss_fns
 from utils.common_cir import *
+from utils.common_cir import _get_projections
 from utils.data_loading import *
 from utils.evals import eval_on
 from utils.git_and_reproducibility import get_conf_hash, repo_root
@@ -224,12 +225,32 @@ if "retaining_rate" in cfg:
 for _, m in trainable_modules(model):
     m.kl_acc = pt.zeros_like(m.weight)
 
-# * cache the activations for circuit breaker
+# %%
+
 if cfg.loss_fn_name == "circuit_breaker":
+    # * cache the activations for circuit breaker
     for batch in training_batches:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True, return_dict=True)
-        batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
+        # batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
+        full_act = output.hidden_states[cfg.cb_layer_idx].detach()
+        _mask = batch["attention_mask"].bool()
+        batch["act_for_cb"] = full_act[_mask].cpu()
+
+    # * get the projections
+    rep_list = []
+    for batch in training_batches:
+        rep_list.append(batch["act_for_cb"])
+    reps_flattened = pt.cat(rep_list)
+    rep_to_collapse = _get_projections(reps_flattened, cfg.rep_proj_num, cfg.cir_niter)
+
+    # * project out the representations
+    for batch in training_batches:
+        rep = batch["act_for_cb"].to(device_main)
+        for comp in rep_to_collapse:
+            rep -= project_out(rep, comp)
+        batch["act_for_cb"] = rep.cpu()
+
 
 # %%
 # script name -> project

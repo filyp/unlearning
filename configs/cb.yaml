@@ -43,6 +43,7 @@ mask_n_most_common_tokens: null
 eval_on_all_questions: true  # best to just use it when not retraining
 act_proj_num: 6
 grad_proj_num: 0
+rep_proj_num: 6
 
 experiment_number: 0
 experiment_list:
