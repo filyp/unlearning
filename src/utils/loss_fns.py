@@ -35,7 +35,7 @@ def kl_loss(output, batch, model, mask):
     return kl_div
 
 
-def cross_entropy(output, batch, answer_mask=None):
+def cross_entropy(output, batch, cfg=None, answer_mask=None):
     shifted_logits = output.logits[:, :-1, :].float()
     shifted_ids = batch["input_ids"][:, 1:]
 
@@ -59,11 +59,11 @@ def cross_entropy(output, batch, answer_mask=None):
     # return -pt.log(true_probs).mean()
 
 
-def neg_cross_entropy(output, batch, answer_mask=None):
-    return -cross_entropy(output, batch, answer_mask)
+def neg_cross_entropy(output, batch, cfg=None, answer_mask=None):
+    return -cross_entropy(output, batch, cfg, answer_mask)
 
 
-def correct_logit(output, batch, answer_mask=None, clip_at=0):
+def correct_logit(output, batch, cfg=None, answer_mask=None, clip_at=0):
     logits = output.logits[:, :-1, :].flatten(end_dim=1).float()
     ids = batch["input_ids"][:, 1:].flatten()
     true_logits = logits[pt.arange(len(ids)), ids]
@@ -82,6 +82,22 @@ def correct_logit(output, batch, answer_mask=None, clip_at=0):
     mask = mask[:, 1:].bool().flatten()
 
     return true_logits[mask].mean()
+
+
+def circuit_breaker(output, batch, cfg, answer_mask=None):
+    # mask out the beginning tokens
+    if answer_mask is not None:
+        # note, that answer_mask is a subset of attention mask
+        assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
+        mask = answer_mask
+    else:
+        mask = batch["attention_mask"]
+
+    acts = output.hidden_states[cfg.cb_layer_idx][mask].float()
+    org_acts = batch["act_for_cb"].to(acts.device)[mask].float()
+
+    dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
+    return dotproducts.clip(min=0).mean()
 
 
 # def proj_out_target(output, batch, answer_mask, model):

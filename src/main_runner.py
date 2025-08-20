@@ -52,7 +52,7 @@ if get_ipython() is None:
         cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 else:
     logging.info("Running in Jupyter")
-    cfg = OmegaConf.load("../configs/datasets2.yaml")  # for debugging
+    cfg = OmegaConf.load("../configs/cb.yaml")  # for debugging
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
 
@@ -99,8 +99,8 @@ else:
     raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
 
-T = T.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
-V = V.filter(lambda x: x["Llama-3.1-8B"] > 0.25)
+T = T.filter(lambda x: x[cfg.model_id.split("/")[-1]] > 0.25)
+V = V.filter(lambda x: x[cfg.model_id.split("/")[-1]] > 0.25)
 T_and_V = concatenate_datasets([T, V])
 eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
 logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
@@ -154,7 +154,6 @@ if cfg.mask_n_most_common_tokens is not None:
     logging.info(f"coverage: {coverage:.2f}")
 
 
-# %%
 def _get_loss(model, batches, use_answer_mask=False):
     loss_acc = 0
     for batch in batches:
@@ -211,11 +210,10 @@ unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 
 # * cache the activations for context undisruption
 if "retaining_rate" in cfg:
-    model.train()
     if cfg.get("retain_on_neg_mask", False):
         _act_cache_batches = training_batches
     else:
-        _act_cache_batches = retain_batches[:len(training_batches)]
+        _act_cache_batches = retain_batches[: len(training_batches)]
 
     for batch in _act_cache_batches:
         with pt.no_grad():
@@ -226,6 +224,12 @@ if "retaining_rate" in cfg:
 for _, m in trainable_modules(model):
     m.kl_acc = pt.zeros_like(m.weight)
 
+# * cache the activations for circuit breaker
+if cfg.loss_fn_name == "circuit_breaker":
+    for batch in training_batches:
+        with pt.no_grad():
+            output = model(**batch, output_hidden_states=True, return_dict=True)
+        batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
 
 # %%
 # script name -> project
@@ -234,7 +238,7 @@ for _, m in trainable_modules(model):
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "19.08.2025"  # todo change back
+group = args.config_name + "_" + "20.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -269,7 +273,7 @@ for epoch in range(cfg.max_num_epochs):
         output = model(**batch, output_hidden_states=True)
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
-        loss = loss_fn(output, batch, answer_mask)
+        loss = loss_fn(output, batch, cfg, answer_mask)
         loss.backward()
 
         # ! here we modify the grad

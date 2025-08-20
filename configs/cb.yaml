@@ -1,0 +1,94 @@
+# general, unlikely to change
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+target_modules:
+    - gate_proj
+    - up_proj
+    - down_proj
+batch_size: 4  # with 8b on 40gb gpu, 2 or 4 is the max
+retain_batch_size: 2
+train_batch_size: 6  # can be higher because batches are usually shorter
+num_eval_batches: 16  # will make it slower, but for final plots make it bigger
+
+# model_id: meta-llama/Llama-3.2-3B
+model_id: meta-llama/Llama-3.2-1B
+# model_id: meta-llama/Llama-3.1-8B
+
+# dataset: wmdp_cyber_pairs
+# dataset: wmdp_cyber_pairs_only_ans
+# dataset: wmdp_cyber_deebs
+dataset: wmdp_cyber_simple
+num_examples_per_question: 3
+
+max_num_epochs: 120
+
+retraining_rate: 1e-6
+retraining_epochs: 30
+eval_on_all_questions: false
+
+# default experiment config
+algorithm: CIR
+loss_fn_name: correct_logit
+# loss_fn_name: neg_cross_entropy
+# loss_fn_name: circuit_breaker
+loss_budget: 1.01
+cir_niter: 8
+comment: null
+ignore_bos: true
+# mask_n_most_common_tokens: null
+mask_n_most_common_tokens: 50
+# eval_on_all_questions: true  # best to just use it when not retraining
+act_proj_num: 6
+grad_proj_num: 0
+
+experiment_number: 0
+experiment_list:
+
+    - unlearning_rate: 1e-3
+    # - unlearning_rate: 3e-4
+      # act_proj_num: 10
+      # eval_on_all_questions: true
+
+    - unlearning_rate: 1e-3
+      loss_fn_name: circuit_breaker
+      cb_layer_idx: 8
+      act_proj_num: 6
+      grad_proj_num: 0
+
+
+
+    # - unlearning_rate: 1e-4
+    #   act_proj_num: 6
+    #   grad_proj_num: 1
+    #   num_examples_per_question: 3
+    #   ignore_bos: false
+
+    # - unlearning_rate: 0.5e-3
+    #   act_proj_num: 6
+    #   grad_proj_num: 2
+    #   dataset: wmdp_cyber_deebs
+    #   train_batch_size: 2  # 4 is too much for Deeb's dataset
+    #   loss_fn_name: correct_logit
+
+    # - unlearning_rate: 1e-6
+    #   algorithm: GA
+    #   loss_fn_name: neg_cross_entropy
+       
+    # # sanity check
+    # - unlearning_rate: 1e-6
+    #   loss_fn_name: neg_cross_entropy
+    #   act_proj_num: 0
+    #   grad_proj_num: 0
+    #   ignore_bos: false
+
+
+# retraining_rate: 1e-6
+# retraining_epochs: 30
+
+# retaining_rate: 1e-5
+# retaining_loss_fn: cross_entropy
+# retain_on_context: false
+# retain_to_original: false
