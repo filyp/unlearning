@@ -25,9 +25,9 @@ num_examples_per_question: 3
 
 max_num_epochs: 120
 
-# retraining_rate: 1e-6
-# retraining_epochs: 30
-# eval_on_all_questions: false
+retraining_rate: 1e-6
+retraining_epochs: 30
+eval_on_all_questions: false
 
 # default experiment config
 algorithm: CIR
@@ -40,20 +40,18 @@ comment: null
 ignore_bos: true
 mask_n_most_common_tokens: null
 # mask_n_most_common_tokens: 50
-eval_on_all_questions: true  # best to just use it when not retraining
-act_proj_num: 6
-grad_proj_num: 0
-rep_proj_num: 6
+# eval_on_all_questions: true  # best to just use it when not retraining
+rep_proj_num: 0
 
 experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 7e-4
+      act_proj_num: 6
+      grad_proj_num: 1
     # - unlearning_rate: 3e-4
-      # act_proj_num: 10
-      # eval_on_all_questions: true
 
-    - unlearning_rate: 3e-4
+    - unlearning_rate: 7e-4
       loss_fn_name: circuit_breaker
       cb_layer_idx: 8
       act_proj_num: 0
@@ -64,12 +62,39 @@ experiment_list:
       cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
+      loss_budget: 1.005
 
     - unlearning_rate: 7e-4
       loss_fn_name: circuit_breaker
-      cb_layer_idx: 12
+      cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
+      rep_proj_num: 0
+      num_examples_per_question: 7
+
+    - unlearning_rate: 7e-4
+      loss_fn_name: circuit_breaker
+      cb_layer_idx: 8
+      act_proj_num: 6
+      grad_proj_num: 6
+      rep_proj_num: 4
+      num_examples_per_question: 3
+
+    - unlearning_rate: 7e-4
+      loss_fn_name: circuit_breaker
+      cb_layer_idx: 8
+      act_proj_num: 6
+      grad_proj_num: 0
+      rep_proj_num: 4
+      num_examples_per_question: 3
+
+
+
+
+
+
+
+
 
     # - unlearning_rate: 1e-4
     #   act_proj_num: 6

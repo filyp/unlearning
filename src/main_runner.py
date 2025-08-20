@@ -85,17 +85,17 @@ wikitext_batches = [
 _corpus_version = "corpus_simple" if "simple" in cfg.dataset else "corpus"
 if "bio" in cfg.dataset:
     retain_set = load_fineweb_bio_corpus()
-    T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
-    # T = load_local(f"wmdp_deduped_bio/T_{_corpus_version}.jsonl")
-    # V = load_local(f"wmdp_deduped_bio/V_{_corpus_version}.jsonl")
+    # T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
+    # V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_bio/T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_bio/V_{_corpus_version}.jsonl")
 
 elif "cyber" in cfg.dataset:
     retain_set = load_fineweb_tech_corpus()
-    T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
-    # T = load_local(f"wmdp_deduped_cyber/T_{_corpus_version}.jsonl")
-    # V = load_local(f"wmdp_deduped_cyber/V_{_corpus_version}.jsonl")
+    # T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
+    # V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_cyber/T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/V_{_corpus_version}.jsonl")
 else:
     raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
@@ -237,6 +237,7 @@ if cfg.loss_fn_name == "circuit_breaker":
         _mask = batch["attention_mask"].bool()
         batch["act_for_cb"] = full_act[_mask].cpu()
 
+    # todo: probably can delete this in the future
     # * get the projections
     rep_list = []
     for batch in training_batches:
@@ -259,7 +260,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "20.08.2025_eval_all_qs"  # todo change back
+group = args.config_name + "_" + "20.08.2025_eval_all_qs_no_dev"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
