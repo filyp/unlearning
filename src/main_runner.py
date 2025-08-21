@@ -41,7 +41,7 @@ from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_m
 # plt dark theme
 plt.style.use("dark_background")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # Parse just the config-name, let Hydra handle the rest
 parser = argparse.ArgumentParser()
@@ -54,6 +54,7 @@ if get_ipython() is None:
 else:
     logging.info("Running in Jupyter")
     cfg = OmegaConf.load("../configs/cb.yaml")  # for debugging
+    cfg.model_id = "meta-llama/Llama-3.2-1B"  # locally we can use only 1B
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
 
@@ -83,19 +84,16 @@ wikitext_batches = [
 
 
 _corpus_version = "corpus_simple" if "simple" in cfg.dataset else "corpus"
+is_dev = "dev_" if cfg.use_dev_split else ""
 if "bio" in cfg.dataset:
     retain_set = load_fineweb_bio_corpus()
-    # T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
-    # V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
-    T = load_local(f"wmdp_deduped_bio/T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_bio/V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_bio/{is_dev}T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_bio/{is_dev}V_{_corpus_version}.jsonl")
 
 elif "cyber" in cfg.dataset:
     retain_set = load_fineweb_tech_corpus()
-    # T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
-    # V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
-    T = load_local(f"wmdp_deduped_cyber/T_{_corpus_version}.jsonl")
-    V = load_local(f"wmdp_deduped_cyber/V_{_corpus_version}.jsonl")
+    T = load_local(f"wmdp_deduped_cyber/{is_dev}T_{_corpus_version}.jsonl")
+    V = load_local(f"wmdp_deduped_cyber/{is_dev}V_{_corpus_version}.jsonl")
 else:
     raise ValueError(f"Unknown dataset: {cfg.dataset}")
 
@@ -234,23 +232,26 @@ if cfg.loss_fn_name == "circuit_breaker":
             output = model(**batch, output_hidden_states=True, return_dict=True)
         # batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
         full_act = output.hidden_states[cfg.cb_layer_idx].detach()
-        _mask = batch["attention_mask"].bool()
-        batch["act_for_cb"] = full_act[_mask].cpu()
+        _mask = batch["attention_mask"].bool().clone()
+        _mask[:, :cfg.cut_off_tokens] = False
+        _act_for_cb = full_act[_mask]
+        batch["act_for_cb"] = _act_for_cb.cpu()
+        batch["avg_act_norm"] = _act_for_cb.float().norm(dim=-1).mean().cpu()
 
-    # todo: probably can delete this in the future
-    # * get the projections
-    rep_list = []
-    for batch in training_batches:
-        rep_list.append(batch["act_for_cb"])
-    reps_flattened = pt.cat(rep_list)
-    rep_to_collapse = _get_projections(reps_flattened, cfg.rep_proj_num, cfg.cir_niter)
+    # # todo: probably can delete this in the future
+    # # * get the projections
+    # rep_list = []
+    # for batch in training_batches:
+    #     rep_list.append(batch["act_for_cb"])
+    # reps_flattened = pt.cat(rep_list)
+    # rep_to_collapse = _get_projections(reps_flattened, cfg.rep_proj_num, cfg.cir_niter)
 
-    # * project out the representations
-    for batch in training_batches:
-        rep = batch["act_for_cb"].to(device_main)
-        for comp in rep_to_collapse:
-            rep -= project_out(rep, comp)
-        batch["act_for_cb"] = rep.cpu()
+    # # * project out the representations
+    # for batch in training_batches:
+    #     rep = batch["act_for_cb"].to(device_main)
+    #     for comp in rep_to_collapse:
+    #         rep -= project_out(rep, comp)
+    #     batch["act_for_cb"] = rep.cpu()
 
 
 # %%
@@ -260,7 +261,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + "_" + "20.08.2025_eval_all_qs_no_dev"  # todo change back
+group = args.config_name + f"_{is_dev}21.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -303,8 +304,8 @@ for epoch in range(cfg.max_num_epochs):
             for n, m in trainable_modules(model):
                 if m.weight.grad is None:
                     continue
-                acts = get_last_act(m, batch["attention_mask"], cfg.ignore_bos)
-                grads = get_last_grad(m, batch["attention_mask"], cfg.ignore_bos)
+                acts = get_last_act(m, batch["attention_mask"], cfg.cut_off_tokens)
+                grads = get_last_grad(m, batch["attention_mask"], cfg.cut_off_tokens)
                 acts_list[n].append(acts.clone().to("cpu"))
                 grads_list[n].append(grads.clone().to("cpu"))
                 assert len(acts.shape) == len(grads.shape) == 2

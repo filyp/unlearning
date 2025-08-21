@@ -1,3 +1,4 @@
+import logging
 import torch as pt
 import torch.nn.functional as F
 
@@ -85,21 +86,19 @@ def correct_logit(output, batch, cfg=None, answer_mask=None, clip_at=0):
 
 
 def circuit_breaker(output, batch, cfg, answer_mask=None):
-    # mask out the beginning tokens
-    if answer_mask is not None:
-        # note, that answer_mask is a subset of attention mask
-        assert pt.all(batch["attention_mask"] * answer_mask == answer_mask)
-        mask = answer_mask
-    else:
-        mask = batch["attention_mask"]
-    mask = mask.bool()
+    assert answer_mask is None, "not supported, because wouldn't match act_for_cb"
+    mask = batch["attention_mask"].bool().clone()
+    mask[:, :cfg.cut_off_tokens] = False
 
     acts = output.hidden_states[cfg.cb_layer_idx][mask].float()
     org_acts = batch["act_for_cb"].to(acts.device).float()
     assert acts.shape == org_acts.shape
 
     dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
-    return dotproducts.clip(min=0).mean()
+    dotproducts /= batch["avg_act_norm"].to(acts.device) ** 2
+    logging.debug(dotproducts)
+    return dotproducts.clip(min=cfg.cb_floor).mean()
+    # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
 
 
 # def proj_out_target(output, batch, answer_mask, model):

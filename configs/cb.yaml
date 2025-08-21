@@ -22,8 +22,10 @@ model_id: meta-llama/Llama-3.1-8B
 # dataset: wmdp_cyber_deebs
 dataset: wmdp_cyber_simple
 num_examples_per_question: 3
+use_dev_split: false
+# use_dev_split: true
 
-max_num_epochs: 120
+max_num_epochs: 60
 
 retraining_rate: 1e-6
 retraining_epochs: 30
@@ -37,11 +39,13 @@ loss_fn_name: correct_logit
 loss_budget: 1.01
 cir_niter: 8
 comment: null
-ignore_bos: true
 mask_n_most_common_tokens: null
 # mask_n_most_common_tokens: 50
 # eval_on_all_questions: true  # best to just use it when not retraining
-rep_proj_num: 0
+# rep_proj_num: 0 # deprecated
+cut_off_tokens: 1
+cb_floor: 0.0
+
 
 experiment_number: 0
 experiment_list:
@@ -49,7 +53,6 @@ experiment_list:
     - unlearning_rate: 7e-4
       act_proj_num: 6
       grad_proj_num: 1
-    # - unlearning_rate: 3e-4
 
     - unlearning_rate: 7e-4
       loss_fn_name: circuit_breaker
@@ -57,36 +60,42 @@ experiment_list:
       act_proj_num: 0
       grad_proj_num: 0
 
-    - unlearning_rate: 7e-4
+    - unlearning_rate: 3e-2
       loss_fn_name: circuit_breaker
       cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
-      loss_budget: 1.005
 
-    - unlearning_rate: 7e-4
+    - unlearning_rate: 3e-2
       loss_fn_name: circuit_breaker
       cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
-      rep_proj_num: 0
-      num_examples_per_question: 7
+      cb_floor: 0.5
 
-    - unlearning_rate: 7e-4
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 6
-      rep_proj_num: 4
-      num_examples_per_question: 3
+    # - unlearning_rate: 7e-4
+    #   loss_fn_name: circuit_breaker
+    #   cb_layer_idx: 8
+    #   act_proj_num: 6
+    #   grad_proj_num: 6
+    #   rep_proj_num: 0
+    #   num_examples_per_question: 7
 
-    - unlearning_rate: 7e-4
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 0
-      rep_proj_num: 4
-      num_examples_per_question: 3
+    # - unlearning_rate: 7e-4
+    #   loss_fn_name: circuit_breaker
+    #   cb_layer_idx: 8
+    #   act_proj_num: 6
+    #   grad_proj_num: 6
+    #   rep_proj_num: 4
+    #   num_examples_per_question: 3
+
+    # - unlearning_rate: 7e-4
+    #   loss_fn_name: circuit_breaker
+    #   cb_layer_idx: 8
+    #   act_proj_num: 6
+    #   grad_proj_num: 0
+    #   rep_proj_num: 4
+    #   num_examples_per_question: 3
 
 
 

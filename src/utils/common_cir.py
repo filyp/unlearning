@@ -29,19 +29,17 @@ def install_hooks(model):
         module.register_full_backward_pre_hook(save_grad_hook)
 
 
-def get_last_act(module, attn_mask, ignore_bos=True):
+def get_last_act(module, attn_mask, cut_off_tokens=1):
     # ignore BOS token and the last token
-    ignore_bos = 1 if ignore_bos else 0
-    act = module.last_act_full[:, ignore_bos:-1]
-    final_mask = attn_mask.bool()[:, ignore_bos:-1]
+    act = module.last_act_full[:, cut_off_tokens:-1]
+    final_mask = attn_mask.bool()[:, cut_off_tokens:-1]
     return act[final_mask]
 
 
-def get_last_grad(module, attn_mask, ignore_bos=True):
+def get_last_grad(module, attn_mask, cut_off_tokens=1):
     # ignore BOS token and the last token
-    ignore_bos = 1 if ignore_bos else 0
-    grad = module.last_grad_full[:, ignore_bos:-1]
-    final_mask = attn_mask.bool()[:, ignore_bos:-1]
+    grad = module.last_grad_full[:, cut_off_tokens:-1]
+    final_mask = attn_mask.bool()[:, cut_off_tokens:-1]
     return grad[final_mask]
 
 
