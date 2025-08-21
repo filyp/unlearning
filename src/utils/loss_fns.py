@@ -86,11 +86,11 @@ def correct_logit(output, batch, cfg=None, answer_mask=None, clip_at=0):
 
 
 def circuit_breaker(output, batch, cfg, answer_mask=None):
-    assert answer_mask is None, "not supported, because wouldn't match act_for_cb"
-    mask = batch["attention_mask"].bool().clone()
-    mask[:, :cfg.cut_off_tokens] = False
+    _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
+    _mask = _mask.bool().clone()
+    _mask[:, :cfg.cut_off_tokens] = False
 
-    acts = output.hidden_states[cfg.cb_layer_idx][mask].float()
+    acts = output.hidden_states[cfg.cb_layer_idx][_mask].float()
     org_acts = batch["act_for_cb"].to(acts.device).float()
     assert acts.shape == org_acts.shape
 

@@ -25,9 +25,9 @@ num_examples_per_question: 3
 use_dev_split: false
 # use_dev_split: true
 
-max_num_epochs: 60
+max_num_epochs: 40
 
-retraining_rate: 1e-6
+retraining_rate: 2e-6  # todo verify it's ok
 retraining_epochs: 30
 eval_on_all_questions: false
 
@@ -71,7 +71,22 @@ experiment_list:
       cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
-      cb_floor: 0.5
+      cb_floor: 0.3
+
+    - unlearning_rate: 3e-2
+      loss_fn_name: circuit_breaker
+      cb_layer_idx: 8
+      act_proj_num: 6
+      grad_proj_num: 6
+      mask_n_most_common_tokens: 50
+
+    - unlearning_rate: 2e-2
+      loss_fn_name: circuit_breaker
+      cb_layer_idx: 8
+      act_proj_num: 6
+      grad_proj_num: 6
+      cb_floor: 0.3
+      mask_n_most_common_tokens: 50
 
     # - unlearning_rate: 7e-4
     #   loss_fn_name: circuit_breaker

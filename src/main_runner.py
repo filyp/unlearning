@@ -232,11 +232,13 @@ if cfg.loss_fn_name == "circuit_breaker":
             output = model(**batch, output_hidden_states=True, return_dict=True)
         # batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
         full_act = output.hidden_states[cfg.cb_layer_idx].detach()
-        _mask = batch["attention_mask"].bool().clone()
+        _mask = batch.get("answer_mask", batch["attention_mask"])
+        _mask = _mask.bool().clone()
         _mask[:, :cfg.cut_off_tokens] = False
-        _act_for_cb = full_act[_mask]
-        batch["act_for_cb"] = _act_for_cb.cpu()
-        batch["avg_act_norm"] = _act_for_cb.float().norm(dim=-1).mean().cpu()
+        _act = full_act[_mask]
+        batch["act_for_cb"] = _act.cpu()
+        # batch["avg_act_norm"] = _act_for_cb.float().norm(dim=-1).mean().cpu()
+        batch["avg_act_norm"] = _act.float().norm(dim=-1, keepdim=True).cpu()
 
     # # todo: probably can delete this in the future
     # # * get the projections
@@ -418,6 +420,7 @@ wandb.log(res)
 for epoch in range(cfg.retraining_epochs):
     model.train()
     for batch in retraining_batches:
+        pt.cuda.empty_cache()
         model.zero_grad(set_to_none=True)
         output = model(**batch)
         loss = cross_entropy(output, batch)
