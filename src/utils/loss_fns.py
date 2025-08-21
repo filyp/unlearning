@@ -93,14 +93,36 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
     loss_acc = 0
     for layer_id in cfg.cb_layers:
         acts = output.hidden_states[layer_id][_mask].float()
+        # here, the org_acts were already masked out
         org_acts = batch["act_for_cb"][layer_id].to(acts.device).float()
         assert acts.shape == org_acts.shape
+        assert len(acts.shape) == 2
 
         dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
         dotproducts = dotproducts / batch["avg_act_norm"][layer_id].to(acts.device) ** 2
         # logging.debug(dotproducts)
         loss_acc += (dotproducts.clip(min=cfg.cb_floor) ** cfg.cb_pow).mean()
         # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
+
+    return loss_acc / len(cfg.cb_layers)
+
+
+def cb_retain(output, batch, cfg, answer_mask=None):
+    assert answer_mask is None
+    _mask = batch["attention_mask"].bool().clone()
+    # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
+    
+    loss_acc = 0
+    for layer_id in cfg.cb_layers:
+        acts = output.hidden_states[layer_id][_mask].float()
+        org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
+        assert acts.shape == org_acts.shape
+        assert len(acts.shape) == 2
+
+        avg_act_norm = org_acts.norm(dim=-1).mean()
+        dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
+
+        loss_acc += dist ** 2
 
     return loss_acc / len(cfg.cb_layers)
 

@@ -135,7 +135,7 @@ retain_batches = [
 ]
 recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
 
-
+# * mask out the most common tokens
 if cfg.mask_n_most_common_tokens is not None:
     # count the most common tokens in the retain set
     counter = Counter()
@@ -207,23 +207,30 @@ install_hooks(model)
 
 unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 
-# * cache the activations for context undisruption
-if "retaining_rate" in cfg:
-    if cfg.get("retain_on_neg_mask", False):
-        _act_cache_batches = training_batches
-    else:
-        _act_cache_batches = retain_batches[: len(training_batches)]
+# # * cache the activations for context undisruption
+# if "retaining_rate" in cfg:
+#     if cfg.get("retain_on_neg_mask", False):
+#         _act_cache_batches = training_batches
+#     else:
+#         _act_cache_batches = retain_batches[: len(training_batches)]
+#     for batch in _act_cache_batches:
+#         with pt.no_grad():
+#             output = model(**batch, output_hidden_states=True)
+#         batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
 
-    for batch in _act_cache_batches:
+# %%
+
+# * cache the activations for circuit breaker retaining
+if "cb_retaining_rate" in cfg:
+    for batch in retain_batches[: len(training_batches)]:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
-        batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
+        batch["retain_acts"] = {l_num: output.hidden_states[l_num].detach().to("cpu") for l_num in cfg.cb_layers}
 
 # * initialize kl_acc
 for _, m in trainable_modules(model):
     m.kl_acc = pt.zeros_like(m.weight)
 
-# %%
 
 if cfg.loss_fn_name == "circuit_breaker":
     # * cache the activations for circuit breaker
@@ -292,7 +299,7 @@ for epoch in range(cfg.max_num_epochs):
 
     # ! one epoch
     model.train()
-    for i, batch in enumerate(training_batches):
+    for b_num, batch in enumerate(training_batches):
 
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
@@ -341,19 +348,29 @@ for epoch in range(cfg.max_num_epochs):
 
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
+        model.zero_grad(set_to_none=True)
+        pt.cuda.empty_cache()
+
+        if "cb_retaining_rate" in cfg:
+            batch = retain_batches[b_num]
+            _mask = batch["attention_mask"].bool()
+            output = model(**batch, output_hidden_states=True)
+            loss = loss_fns.cb_retain(output, batch, cfg)
+            loss.backward()
+            scale_grads_(model, cfg.cb_retaining_rate)  # apply intended lr
+            unit_optimizer.step()  # unit_optimizer has lr=1.0
+
         if "retaining_rate" in cfg:
             if cfg.get("retain_on_neg_mask", False):
-                # todo it would be possible to reusethe forward pass
+                # todo it would be possible to reuse the forward pass
                 #     do it in the optimized version, but here, be general
                 assert "answer_mask" in batch
                 _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
             else:
                 # use retain_batches
-                batch = retain_batches[i]
+                batch = retain_batches[b_num]
                 _mask = batch["attention_mask"].bool()
 
-            model.zero_grad(set_to_none=True)
-            pt.cuda.empty_cache()
             # output = model(**batch, output_hidden_states=True)
             output = model(**batch)
 
@@ -380,11 +397,12 @@ for epoch in range(cfg.max_num_epochs):
             scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
 
+    model.zero_grad(set_to_none=True)
+    pt.cuda.empty_cache()
+
     if cfg.algorithm == "CIR":
         # ! calculate means and PCA components
         # _start_time = time.time()
-        model.zero_grad(set_to_none=True)
-        pt.cuda.empty_cache()
         act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
         grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
         # logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")

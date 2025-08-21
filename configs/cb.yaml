@@ -29,7 +29,7 @@ max_num_epochs: 60
 
 # retraining_rate: 2e-6  # even with 1e-6, wikitext_loss has this Nike shape
 retraining_rate: 1e-6
-retraining_epochs: 60
+retraining_epochs: 40
 eval_on_all_questions: false
 
 # default experiment config
@@ -59,41 +59,138 @@ experiment_list:
       act_proj_num: 6
       grad_proj_num: 1
 
-    - unlearning_rate: 3e-2
-      cb_layers: [8, 12]
-
-    - unlearning_rate: 3e-2
-      cb_layers: [6]
-      cb_floor: 0.3
-
-    - unlearning_rate: 2.66e-2
-      cb_layers: [6]
-      cb_floor: 0.0
-      # cb_pow: 2.0
-      cb_pow: 1.5
-
-    - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8, 9, 10]
-      cb_floor: 0.0
-      cb_pow: 1.0
-
-    - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8, 9, 10]
+    - unlearning_rate: 1.5e-2
+      cb_layers: [6, 7, 8]
       cb_floor: 0.0
       cb_pow: 2.0
 
-    - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8, 9, 10]
+    - unlearning_rate: 1.2e-2
+      cb_layers: [6, 7, 8]
       cb_floor: 0.0
-      cb_pow: 1.5
+      cb_pow: 2.0
+
+    - unlearning_rate: 1.5e-2
+      cb_layers: [5, 6, 7]
+      cb_floor: 0.0
+      cb_pow: 2.0
+
+    - unlearning_rate: 1.6e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 2.0
+
+    - unlearning_rate: 2e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 1.6
 
     - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8, 9, 10, 11, 12]
+      cb_layers: [6, 7, 8]
       cb_floor: 0.0
-      cb_pow: 1.5
+      cb_pow: 2.0
+      cb_retaining_rate: 1e-3
+      loss_budget: 1.005
+
+    - unlearning_rate: 3e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 2.0
+      cb_retaining_rate: 3e-3
+
+    - unlearning_rate: 2e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 2.0
+      cb_retaining_rate: 1e-3
 
 
 
+    - unlearning_rate: 1.7e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 1.8
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6]
+    #   cb_floor: 0.3
+
+    # - unlearning_rate: 2.66e-2
+    #   cb_layers: [6]
+    #   cb_floor: 0.0
+    #   # cb_pow: 2.0
+    #   cb_pow: 1.5
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6, 7, 8, 9, 10]
+    #   cb_floor: 0.0
+    #   cb_pow: 1.0
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6, 7, 8, 9, 10]
+    #   cb_floor: 0.0
+    #   cb_pow: 2.0
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6, 7, 8, 9, 10]
+    #   cb_floor: 0.0
+    #   cb_pow: 1.5
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6, 7, 8, 9, 10, 11, 12]
+    #   cb_floor: 0.0
+    #   cb_pow: 1.5
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [6, 7, 8]
+    #   cb_floor: 0.0
+    #   cb_pow: 2.0
+
+    # - unlearning_rate: 3e-2
+    #   cb_layers: [5, 6, 7, 8]
+    #   cb_floor: 0.0
+    #   cb_pow: 2.0
 
 
 
