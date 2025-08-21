@@ -230,15 +230,17 @@ if cfg.loss_fn_name == "circuit_breaker":
     for batch in training_batches:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True, return_dict=True)
-        # batch["act_for_cb"] = output.hidden_states[cfg.cb_layer_idx].detach().to("cpu")
-        full_act = output.hidden_states[cfg.cb_layer_idx].detach()
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
         _mask[:, :cfg.cut_off_tokens] = False
-        _act = full_act[_mask]
-        batch["act_for_cb"] = _act.cpu()
-        batch["avg_act_norm"] = _act.float().norm(dim=-1).mean().cpu()
-        # batch["avg_act_norm"] = _act.float().norm(dim=-1, keepdim=True).cpu()
+        batch["act_for_cb"] = {}
+        batch["avg_act_norm"] = {}
+        for layer_id in cfg.cb_layers:
+            full_act = output.hidden_states[layer_id].detach()
+            _act = full_act[_mask]
+            batch["act_for_cb"][layer_id] = _act.cpu()
+            batch["avg_act_norm"][layer_id] = _act.float().norm(dim=-1).mean().cpu()
+            # batch["avg_act_norm"] = _act.float().norm(dim=-1, keepdim=True).cpu()
 
     # # todo: probably can delete this in the future
     # # * get the projections

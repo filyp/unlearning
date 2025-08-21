@@ -90,16 +90,19 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
     _mask = _mask.bool().clone()
     _mask[:, :cfg.cut_off_tokens] = False
 
-    acts = output.hidden_states[cfg.cb_layer_idx][_mask].float()
-    org_acts = batch["act_for_cb"].to(acts.device).float()
-    assert acts.shape == org_acts.shape
+    loss_acc = 0
+    for layer_id in cfg.cb_layers:
+        acts = output.hidden_states[layer_id][_mask].float()
+        org_acts = batch["act_for_cb"][layer_id].to(acts.device).float()
+        assert acts.shape == org_acts.shape
 
-    dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
-    dotproducts = dotproducts / batch["avg_act_norm"].to(acts.device) ** 2
-    dotproducts = dotproducts ** cfg.cb_pow
-    logging.debug(dotproducts)
-    return dotproducts.clip(min=cfg.cb_floor).mean()
-    # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
+        dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
+        dotproducts = dotproducts / batch["avg_act_norm"][layer_id].to(acts.device) ** 2
+        # logging.debug(dotproducts)
+        loss_acc += (dotproducts.clip(min=cfg.cb_floor) ** cfg.cb_pow).mean()
+        # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
+
+    return loss_acc / len(cfg.cb_layers)
 
 
 # def proj_out_target(output, batch, answer_mask, model):

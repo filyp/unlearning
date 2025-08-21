@@ -27,15 +27,12 @@ use_dev_split: false
 
 max_num_epochs: 40
 
-retraining_rate: 2e-6  # todo verify it's ok
-retraining_epochs: 30
+retraining_rate: 1e-6  # 2e-6 breaks wikitext loss, but is able to undo unlearning fast
+retraining_epochs: 60
 eval_on_all_questions: false
 
 # default experiment config
 algorithm: CIR
-loss_fn_name: correct_logit
-# loss_fn_name: neg_cross_entropy
-# loss_fn_name: circuit_breaker
 loss_budget: 1.01
 cir_niter: 8
 comment: null
@@ -43,48 +40,52 @@ mask_n_most_common_tokens: null
 # mask_n_most_common_tokens: 50
 # eval_on_all_questions: true  # best to just use it when not retraining
 # rep_proj_num: 0 # deprecated
+#
 cut_off_tokens: 1
 cb_floor: 0.0
 cb_pow: 1.0
-
+# loss_fn_name: neg_cross_entropy
+# loss_fn_name: circuit_breaker
+loss_fn_name: circuit_breaker
+act_proj_num: 6
+grad_proj_num: 6
 
 experiment_number: 0
 experiment_list:
 
     - unlearning_rate: 7e-4
+      loss_fn_name: correct_logit
       act_proj_num: 6
       grad_proj_num: 1
 
-    - unlearning_rate: 7e-4
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 0
-      grad_proj_num: 0
+    - unlearning_rate: 3e-2
+      cb_layers: [8, 12]
 
     - unlearning_rate: 3e-2
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 6
-
-    - unlearning_rate: 3e-2
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 6
+      cb_layers: [6]
       cb_floor: 0.3
 
-    - unlearning_rate: 2e-2
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 6
+    - unlearning_rate: 2.66e-2
+      cb_layers: [6]
       cb_floor: 0.0
       # cb_pow: 2.0
       cb_pow: 1.5
 
+    - unlearning_rate: 1.5e-2
+      cb_layers: [6, 7, 8]
+      cb_floor: 0.0
+      cb_pow: 2.0
 
 
+
+
+
+
+    # - unlearning_rate: 7e-4
+    #   loss_fn_name: circuit_breaker
+    #   cb_layers: [8, 12]
+    #   act_proj_num: 0
+    #   grad_proj_num: 0
 
 
     # - unlearning_rate: 3e-2
