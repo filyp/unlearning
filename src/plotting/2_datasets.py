@@ -154,7 +154,7 @@ axes[0, 2].set_title("CIR")
 axes[0, 3].set_title("GA")
 
 # Add group labels above the column titles
-fig.text(0.30, 0.97, "Forget Loss", ha="center", fontsize=10)
+fig.text(0.30, 0.97, "Recall Loss", ha="center", fontsize=10)
 fig.text(0.72, 0.97, "WMDP Accuracy", ha="center", fontsize=10)
 
 # Add row labels
