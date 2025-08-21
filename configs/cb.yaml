@@ -45,6 +45,7 @@ mask_n_most_common_tokens: null
 # rep_proj_num: 0 # deprecated
 cut_off_tokens: 1
 cb_floor: 0.0
+cb_pow: 1.0
 
 
 experiment_number: 0
@@ -73,20 +74,27 @@ experiment_list:
       grad_proj_num: 6
       cb_floor: 0.3
 
-    - unlearning_rate: 3e-2
-      loss_fn_name: circuit_breaker
-      cb_layer_idx: 8
-      act_proj_num: 6
-      grad_proj_num: 6
-      mask_n_most_common_tokens: 50
-
     - unlearning_rate: 2e-2
       loss_fn_name: circuit_breaker
       cb_layer_idx: 8
       act_proj_num: 6
       grad_proj_num: 6
-      cb_floor: 0.3
-      mask_n_most_common_tokens: 50
+      cb_floor: 0.0
+      # cb_pow: 2.0
+      cb_pow: 1.5
+
+
+
+
+
+    # - unlearning_rate: 3e-2
+    #   loss_fn_name: circuit_breaker
+    #   cb_layer_idx: 8
+    #   act_proj_num: 6
+    #   grad_proj_num: 6
+    #   cb_floor: 0.3
+    #   mask_n_most_common_tokens: 50
+
 
     # - unlearning_rate: 7e-4
     #   loss_fn_name: circuit_breaker

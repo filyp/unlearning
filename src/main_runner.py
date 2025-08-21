@@ -237,8 +237,8 @@ if cfg.loss_fn_name == "circuit_breaker":
         _mask[:, :cfg.cut_off_tokens] = False
         _act = full_act[_mask]
         batch["act_for_cb"] = _act.cpu()
-        # batch["avg_act_norm"] = _act_for_cb.float().norm(dim=-1).mean().cpu()
-        batch["avg_act_norm"] = _act.float().norm(dim=-1, keepdim=True).cpu()
+        batch["avg_act_norm"] = _act.float().norm(dim=-1).mean().cpu()
+        # batch["avg_act_norm"] = _act.float().norm(dim=-1, keepdim=True).cpu()
 
     # # todo: probably can delete this in the future
     # # * get the projections

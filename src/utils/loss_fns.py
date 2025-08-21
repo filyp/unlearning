@@ -95,7 +95,8 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
     assert acts.shape == org_acts.shape
 
     dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
-    dotproducts /= batch["avg_act_norm"].to(acts.device) ** 2
+    dotproducts = dotproducts / batch["avg_act_norm"].to(acts.device) ** 2
+    dotproducts = dotproducts ** cfg.cb_pow
     logging.debug(dotproducts)
     return dotproducts.clip(min=cfg.cb_floor).mean()
     # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
