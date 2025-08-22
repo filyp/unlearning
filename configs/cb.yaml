@@ -75,6 +75,7 @@ experiment_list:
       cb_pow: 1.0
       retaining_rate: 4e-3
       cb_layers: [6, 7, 8]
+      retain_batch_size: 8
       decay_to_orig: 0.002
 
     - unlearning_rate: 5e-2
