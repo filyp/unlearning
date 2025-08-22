@@ -135,6 +135,9 @@ retain_batches = [
     for x in retain_set.shuffle(seed=42).batch(cfg.retain_batch_size)
     # .select(range(max(len(training_batches), cfg.num_eval_batches)))
 ]
+
+# retain_batches = wikitext_batches[-len(retain_batches):]
+
 recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
 
 # * mask out the most common tokens
@@ -204,7 +207,7 @@ model.config.use_cache = False
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
-if cfg.get("retain_to_original", False):
+if cfg.get("retain_to_original", False) or cfg.get("decay_to_orig", False):
     # assert num_gpus == 2
     original_weights = {
         n: m.weight.clone().detach().to(device_storage)
@@ -397,6 +400,11 @@ for epoch in range(cfg.max_num_epochs):
 
             scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
+        
+        if cfg.get("decay_to_orig", False):
+            for n, orig_w in original_weights.items():
+                w = model.get_submodule(n).weight
+                w.data = orig_w * cfg.decay_to_orig + w.data * (1 - cfg.decay_to_orig)
 
     model.zero_grad(set_to_none=True)
     pt.cuda.empty_cache()
