@@ -63,14 +63,16 @@ set_seeds(42)
 
 num_gpus = pt.cuda.device_count()
 logging.info(f"Number of GPUs available: {num_gpus}")
-if num_gpus == 1:
-    pt.set_default_device("cuda")
-    device_main = pt.device("cuda")
-    device_storage = pt.device("cuda")
-elif num_gpus == 2:
-    pt.set_default_device("cuda:0")
-    device_main = pt.device("cuda:0")
-    device_storage = pt.device("cuda:1")
+device_main = pt.device("cuda")
+device_storage = pt.device("cuda")
+# if num_gpus == 1:
+#     pt.set_default_device("cuda")
+#     device_main = pt.device("cuda")
+#     device_storage = pt.device("cuda")
+# elif num_gpus == 2:
+#     pt.set_default_device("cuda:0")
+#     device_main = pt.device("cuda:0")
+#     device_storage = pt.device("cuda:1")
 
 tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
 tokenizer.pad_token = tokenizer.eos_token
@@ -169,6 +171,7 @@ def _get_loss(model, batches, use_answer_mask=False):
 def get_metrics(model):
     res = {}
     model.eval()
+    model.model.layers = all_layers  # for trimmed model
 
     # * eval forget acc
     res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
@@ -176,10 +179,12 @@ def get_metrics(model):
     nb = cfg.num_eval_batches
     res["wikitext_loss"] = _get_loss(model, wikitext_batches[:nb])
     res["retain_loss"] = _get_loss(model, retain_batches[:nb])
-    res["training_loss"] = _get_loss(model, training_batches[:nb])
+    # res["training_loss"] = _get_loss(model, training_batches[:nb])
     res["recall_loss"] = _get_loss(model, recall_batches, use_answer_mask=True)
 
     logging.info(res)
+    if cfg.get("trim_model", False):
+        model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
     return res
 
 
@@ -190,46 +195,43 @@ model = AutoModelForCausalLM.from_pretrained(
     cfg.model_id, torch_dtype=pt.bfloat16, device_map=device_main
 )
 model.config.use_cache = False
+all_layers = model.model.layers  # for trimmed model
+if cfg.get("trim_model", False):
+    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
 
 # * set trainable params
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
 
 if cfg.get("retain_to_original", False):
-    assert num_gpus == 2
+    # assert num_gpus == 2
     original_weights = {
         n: m.weight.clone().detach().to(device_storage)
         # n: m.weight.clone().detach().to(pt.float8_e4m3fn).to(device_storage)
         for n, m in trainable_modules(model)
+        if int(n.split(".")[2]) <= max(cfg.cb_layers)  # for trimmed model
     }
 
 install_hooks(model)
 
 unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 
-# # * cache the activations for context undisruption
-# if "retaining_rate" in cfg:
-#     if cfg.get("retain_on_neg_mask", False):
-#         _act_cache_batches = training_batches
-#     else:
-#         _act_cache_batches = retain_batches[: len(training_batches)]
-#     for batch in _act_cache_batches:
-#         with pt.no_grad():
-#             output = model(**batch, output_hidden_states=True)
-#         batch["original_last_act"] = output.hidden_states[-1].detach().to("cpu")
 
 # %%
 
 # * cache the activations for circuit breaker retaining
+retain_batches = retain_batches[: len(training_batches)]
 if (cfg.get("retaining_rate", 0) > 0) and (cfg.retaining_loss_fn == "cb_retain"):
-    for batch in retain_batches[: len(training_batches)]:
+    # if cfg.get("retain_on_neg_mask", False):
+        # _act_cache_batches = training_batches
+    for batch in retain_batches:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
         batch["retain_acts"] = {l_num: output.hidden_states[l_num].detach().to("cpu") for l_num in cfg.cb_layers}
 
-# * initialize kl_acc
-for _, m in trainable_modules(model):
-    m.kl_acc = pt.zeros_like(m.weight)
+# # * initialize kl_acc
+# for _, m in trainable_modules(model):
+#     m.kl_acc = pt.zeros_like(m.weight)
 
 
 if cfg.loss_fn_name == "circuit_breaker":
@@ -291,6 +293,7 @@ assert cfg.algorithm in ["CIR", "GA"]
 # % full training loop
 start_time = time.time()
 act_to_collapse = None
+_retain_iter = 0
 for epoch in range(cfg.max_num_epochs):
     pt.cuda.empty_cache()
 
@@ -359,7 +362,8 @@ for epoch in range(cfg.max_num_epochs):
                 _mask = batch["attention_mask"].bool() & (~batch["answer_mask"].bool())
             else:
                 # use retain_batches
-                batch = retain_batches[b_num]
+                batch = retain_batches[_retain_iter % len(retain_batches)]
+                _retain_iter += 1
                 _mask = batch["attention_mask"].bool()
 
             output = model(**batch, output_hidden_states=True)
@@ -380,11 +384,10 @@ for epoch in range(cfg.max_num_epochs):
             if cfg.get("retain_to_original", False):
                 # * only allow reverting retain updates
                 for n, _ in trainable_modules(model):
-                    pt.cuda.empty_cache()
                     w = model.get_submodule(n).weight
                     if w.grad is None:
                         continue
-                    orig_w = original_weights[n].to(device_main, dtype=pt.bfloat16)
+                    orig_w = original_weights[n] #.to(device_main, dtype=pt.bfloat16)
                     # filter out if diff=0 too:
                     mask = (w - orig_w).sign() != w.grad.sign()
                     # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
@@ -414,6 +417,7 @@ for epoch in range(cfg.max_num_epochs):
 wandb.finish()
 logging.info(f"time taken: {time.time() - start_time:.2f}s")
 
+model.model.layers = all_layers  # for trimmed model
 
 # %% retraining on T
 
