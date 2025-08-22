@@ -25,11 +25,11 @@ num_examples_per_question: 3
 use_dev_split: false
 # use_dev_split: true
 
-max_num_epochs: 60
+max_num_epochs: 50
 
-# retraining_rate: 2e-6  # even with 1e-6, wikitext_loss has this Nike shape
-retraining_rate: 1e-6
-retraining_epochs: 40
+retraining_rate: 2e-6  # even with 1e-6, wikitext_loss has this Nike shape
+# retraining_rate: 1e-6
+retraining_epochs: 50
 eval_on_all_questions: false
 
 # default experiment config
@@ -50,65 +50,74 @@ cb_pow: 1.0
 loss_fn_name: circuit_breaker
 act_proj_num: 6
 grad_proj_num: 6
+cb_layers: [6, 7, 8]
+retaining_loss_fn: cb_retain
+
+    # - unlearning_rate: 7e-4
+    #   loss_fn_name: correct_logit
+    #   act_proj_num: 6
+    #   grad_proj_num: 1
+
 
 experiment_number: 0
 experiment_list:
 
-    - unlearning_rate: 7e-4
-      loss_fn_name: correct_logit
-      act_proj_num: 6
-      grad_proj_num: 1
-
+    # the one which doesn't debounce even without retaining
     - unlearning_rate: 1.5e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
-      cb_pow: 2.0
-
-    - unlearning_rate: 1.2e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
-      cb_pow: 2.0
-
-    - unlearning_rate: 1.5e-2
-      cb_layers: [5, 6, 7]
-      cb_floor: 0.0
-      cb_pow: 2.0
-
-    - unlearning_rate: 1.6e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
       cb_pow: 2.0
 
     - unlearning_rate: 2e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
-      cb_pow: 1.6
+      cb_pow: 2.0
+      retaining_rate: 0e-3
 
     - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
       cb_pow: 2.0
-      cb_retaining_rate: 1e-3
-      loss_budget: 1.005
-
-    - unlearning_rate: 3e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
-      cb_pow: 2.0
-      cb_retaining_rate: 3e-3
+      retaining_rate: 1e-3
 
     - unlearning_rate: 2e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
       cb_pow: 2.0
-      cb_retaining_rate: 1e-3
+      retaining_rate: 1e-2
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 1e-4
+
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 1e-3
+      retain_to_original: true
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 1e-2
+      retain_to_original: true
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 1e-4
+      retain_to_original: true
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 1e-1
+      retain_to_original: true
+
+    - unlearning_rate: 2e-2
+      cb_pow: 2.0
+      retaining_rate: 3e-3
+      retain_to_original: true
+
+    - unlearning_rate: 3e-2
+      cb_pow: 2.0
+      retaining_rate: 3e-3
+      retain_to_original: true
 
 
 
-    - unlearning_rate: 1.7e-2
-      cb_layers: [6, 7, 8]
-      cb_floor: 0.0
-      cb_pow: 1.8
+
+
+
 
 
 

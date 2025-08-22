@@ -221,7 +221,7 @@ unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 # %%
 
 # * cache the activations for circuit breaker retaining
-if "cb_retaining_rate" in cfg:
+if (cfg.get("retaining_rate", 0) > 0) and (cfg.retaining_loss_fn == "cb_retain"):
     for batch in retain_batches[: len(training_batches)]:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
@@ -272,7 +272,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + f"_{is_dev}21.08.2025"  # todo change back
+group = args.config_name + f"_{is_dev}22.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -351,16 +351,7 @@ for epoch in range(cfg.max_num_epochs):
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
 
-        if "cb_retaining_rate" in cfg:
-            batch = retain_batches[b_num]
-            _mask = batch["attention_mask"].bool()
-            output = model(**batch, output_hidden_states=True)
-            loss = loss_fns.cb_retain(output, batch, cfg)
-            loss.backward()
-            scale_grads_(model, cfg.cb_retaining_rate)  # apply intended lr
-            unit_optimizer.step()  # unit_optimizer has lr=1.0
-
-        if "retaining_rate" in cfg:
+        if cfg.get("retaining_rate", 0) > 0:
             if cfg.get("retain_on_neg_mask", False):
                 # todo it would be possible to reuse the forward pass
                 #     do it in the optimized version, but here, be general
@@ -371,8 +362,8 @@ for epoch in range(cfg.max_num_epochs):
                 batch = retain_batches[b_num]
                 _mask = batch["attention_mask"].bool()
 
-            # output = model(**batch, output_hidden_states=True)
-            output = model(**batch)
+            output = model(**batch, output_hidden_states=True)
+            # output = model(**batch)
 
             if cfg.retaining_loss_fn == "kl_loss":
                 assert "original_last_act" in batch
@@ -380,6 +371,9 @@ for epoch in range(cfg.max_num_epochs):
             elif cfg.retaining_loss_fn == "cross_entropy":
                 assert not cfg.retain_on_neg_mask, "not implemented"
                 loss = cross_entropy(output, batch)
+            elif cfg.retaining_loss_fn == "cb_retain":
+                assert not cfg.get("retain_on_neg_mask", False), "not implemented"
+                loss = loss_fns.cb_retain(output, batch, cfg)
 
             loss.backward()
 
@@ -388,6 +382,8 @@ for epoch in range(cfg.max_num_epochs):
                 for n, _ in trainable_modules(model):
                     pt.cuda.empty_cache()
                     w = model.get_submodule(n).weight
+                    if w.grad is None:
+                        continue
                     orig_w = original_weights[n].to(device_main, dtype=pt.bfloat16)
                     # filter out if diff=0 too:
                     mask = (w - orig_w).sign() != w.grad.sign()
