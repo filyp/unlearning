@@ -41,7 +41,7 @@ from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_m
 # plt dark theme
 plt.style.use("dark_background")
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # Parse just the config-name, let Hydra handle the rest
 parser = argparse.ArgumentParser()
@@ -81,7 +81,7 @@ tokenizer.pad_token = tokenizer.eos_token
 wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
 wikitext_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
-    for x in wikitext.shuffle(seed=42).batch(cfg.batch_size)
+    for x in wikitext.shuffle(seed=42).batch(cfg.wikitext_batch_size)
 ]
 
 
@@ -127,7 +127,7 @@ elif "deebs" in cfg.dataset:
     ]
     retraining_batches = [
         tokenizer(texts, **cfg.tokenizer)
-        for texts in t_txts.shuffle(seed=42).batch(cfg.batch_size)["text"]
+        for texts in t_txts.shuffle(seed=42).batch(cfg.train_batch_size)["text"]
     ]
 
 retain_batches = [
@@ -171,7 +171,7 @@ def _get_loss(model, batches, use_answer_mask=False):
 def get_metrics(model):
     res = {}
     model.eval()
-    model.model.layers = all_layers  # for trimmed model
+    # model.model.layers = all_layers  # for trimmed model
 
     # * eval forget acc
     res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
@@ -183,8 +183,8 @@ def get_metrics(model):
     res["recall_loss"] = _get_loss(model, recall_batches, use_answer_mask=True)
 
     logging.info(res)
-    if cfg.get("trim_model", False):
-        model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+    # if cfg.get("trim_model", False):
+        # model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
     return res
 
 
@@ -195,9 +195,10 @@ model = AutoModelForCausalLM.from_pretrained(
     cfg.model_id, torch_dtype=pt.bfloat16, device_map=device_main
 )
 model.config.use_cache = False
-all_layers = model.model.layers  # for trimmed model
-if cfg.get("trim_model", False):
-    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+# # that model trimming implementation breaks retraining! so don't use it until it's fixed
+# all_layers = model.model.layers  # for trimmed model
+# if cfg.get("trim_model", False):
+    # model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
 
 # * set trainable params
 for n, p in model.named_parameters():
@@ -209,12 +210,13 @@ if cfg.get("retain_to_original", False):
         n: m.weight.clone().detach().to(device_storage)
         # n: m.weight.clone().detach().to(pt.float8_e4m3fn).to(device_storage)
         for n, m in trainable_modules(model)
-        if int(n.split(".")[2]) <= max(cfg.cb_layers)  # for trimmed model
+        if int(n.split(".")[2]) <= max(cfg.cb_layers)
     }
 
 install_hooks(model)
 
 unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
+retraining_optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 
 
 # %%
@@ -274,7 +276,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + f"_{is_dev}22.08.2025"  # todo change back
+group = args.config_name + f"_{is_dev}22.08.2025_2"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -417,7 +419,7 @@ for epoch in range(cfg.max_num_epochs):
 wandb.finish()
 logging.info(f"time taken: {time.time() - start_time:.2f}s")
 
-model.model.layers = all_layers  # for trimmed model
+# model.model.layers = all_layers  # for trimmed model
 
 # %% retraining on T
 
@@ -431,7 +433,6 @@ wandb.init(
     name=run_name,
     config=OmegaConf.to_container(cfg),
 )
-optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 
 # * get metrics
 res = get_metrics(model)
@@ -445,7 +446,7 @@ for epoch in range(cfg.retraining_epochs):
         output = model(**batch)
         loss = cross_entropy(output, batch)
         loss.backward()
-        optimizer.step()
+        retraining_optimizer.step()
 
     # * get metrics
     res = get_metrics(model)
