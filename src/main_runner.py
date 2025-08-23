@@ -174,7 +174,6 @@ def _get_loss(model, batches, use_answer_mask=False):
 def get_metrics(model):
     res = {}
     model.eval()
-    # model.model.layers = all_layers  # for trimmed model
 
     # * eval forget acc
     res["forget_acc_t0"], res["forget_acc_t1"] = eval_on(eval_qs, model)
@@ -186,8 +185,6 @@ def get_metrics(model):
     res["recall_loss"] = _get_loss(model, recall_batches, use_answer_mask=True)
 
     logging.info(res)
-    # if cfg.get("trim_model", False):
-        # model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
     return res
 
 
@@ -198,10 +195,9 @@ model = AutoModelForCausalLM.from_pretrained(
     cfg.model_id, torch_dtype=pt.bfloat16, device_map=device_main
 )
 model.config.use_cache = False
-# # that model trimming implementation breaks retraining! so don't use it until it's fixed
-# all_layers = model.model.layers  # for trimmed model
-# if cfg.get("trim_model", False):
-    # model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+all_layers = model.model.layers  # for trimmed model
+if cfg.loss_fn_name == "circuit_breaker":  # trim the model
+    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
 
 # * set trainable params
 for n, p in model.named_parameters():
@@ -291,7 +287,12 @@ wandb.init(
     config=OmegaConf.to_container(cfg),
 )
 
+
+model.model.layers = all_layers  # for trimmed model
 init_res = get_metrics(model)
+if cfg.loss_fn_name == "circuit_breaker":  # trim the model
+    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+
 wandb.log(init_res)
 assert cfg.algorithm in ["CIR", "GA"]
 
@@ -349,6 +350,14 @@ for epoch in range(cfg.max_num_epochs):
 
         scale_grads_(model, cfg.unlearning_rate)  # apply intended lr
 
+        if b_num == 0:
+            stats = dict(
+                update_norm = get_update_norm(model),
+                min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
+                max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
+            )
+
+        # * clip grad norm
         if "max_norm" not in globals():  # establish max_norm
             max_norm = get_update_norm(model) * 1
             logging.info(f"max_norm: {max_norm:7.5f}")
@@ -419,15 +428,19 @@ for epoch in range(cfg.max_num_epochs):
             continue  # no need to report metrics, because nothing has changed
 
     # ! get metrics
+    model.model.layers = all_layers  # for trimmed model
     res = get_metrics(model)
-    wandb.log(res)
+    if cfg.loss_fn_name == "circuit_breaker":  # trim the model
+        model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+
+    wandb.log(res | stats)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):
         break
 
 wandb.finish()
 logging.info(f"time taken: {time.time() - start_time:.2f}s")
 
-# model.model.layers = all_layers  # for trimmed model
+model.model.layers = all_layers  # for trimmed model
 
 # %% retraining on T
 

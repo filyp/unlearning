@@ -98,11 +98,20 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
         assert acts.shape == org_acts.shape
         assert len(acts.shape) == 2
 
-        dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
-        dotproducts = dotproducts / batch["avg_act_norm"][layer_id].to(acts.device) ** 2
-        # logging.debug(dotproducts)
-        loss_acc += (dotproducts.clip(min=cfg.cb_floor) ** cfg.cb_pow).mean()
-        # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
+        org_norm = batch["avg_act_norm"][layer_id].to(acts.device)
+        if cfg.cb_type == "dot":
+            dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
+            dotproducts = dotproducts / org_norm ** 2
+            # logging.debug(dotproducts)
+            loss_acc += (dotproducts.clip(min=cfg.cb_floor) ** cfg.cb_pow).mean()
+            # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
+        elif cfg.cb_type == "norm":
+            norms = acts.norm(dim=-1).mean() / org_norm
+            loss_acc += norms # ** cfg.cb_pow
+        elif cfg.cb_type == "cossim":
+            dotproducts = pt.einsum("ts,ts->t", acts, org_acts)
+            cossim = dotproducts / org_acts.norm(dim=-1, keepdim=True) / acts.norm(dim=-1, keepdim=True)
+            loss_acc += cossim.clip(min=0).mean()
 
     return loss_acc / len(cfg.cb_layers)
 
@@ -122,7 +131,7 @@ def cb_retain(output, batch, cfg, answer_mask=None):
         avg_act_norm = org_acts.norm(dim=-1).mean()
         dist = (acts - org_acts).norm(dim=-1).mean() / avg_act_norm
 
-        loss_acc += dist ** 2
+        loss_acc += dist ** cfg.cb_retaining_pow
 
     return loss_acc / len(cfg.cb_layers)
 
