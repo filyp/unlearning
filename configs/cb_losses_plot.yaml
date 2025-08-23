@@ -1,0 +1,77 @@
+# general, unlikely to change
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+target_modules:
+    - gate_proj
+    - up_proj
+    - down_proj
+train_batch_size: 32  # can be higher because batches are usually shorter
+wikitext_batch_size: 16
+retain_batch_size: 16
+num_eval_batches: 8  # will make it slower, but for final plots make it bigger
+
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
+
+# dataset: wmdp_cyber_pairs
+# dataset: wmdp_cyber_pairs_only_ans
+# dataset: wmdp_cyber_deebs
+dataset: wmdp_cyber_simple
+num_examples_per_question: 3
+use_dev_split: false
+# use_dev_split: true
+
+max_num_epochs: 50
+
+retraining_rate: 4e-6
+retraining_epochs: 50
+eval_on_all_questions: false
+
+# default experiment config
+algorithm: CIR
+loss_budget: 1.01
+cir_niter: 8
+comment: null
+mask_n_most_common_tokens: null
+
+cut_off_tokens: 1
+cb_floor: 0.0
+cb_pow: 1.0
+cb_retaining_pow: 2.0
+# loss_fn_name: neg_cross_entropy
+# loss_fn_name: circuit_breaker
+loss_fn_name: circuit_breaker
+cb_type: dot
+act_proj_num: 6
+grad_proj_num: 6
+cb_layers: [6, 7, 8]
+retaining_loss_fn: cb_retain
+
+experiment_number: 0
+experiment_list:
+
+    - unlearning_rate: 15e-2
+      cb_pow: 1.0
+      retaining_rate: 1e-3
+      cb_layers: [6, 7, 8]
+      cb_retaining_pow: 1.0
+      cb_type: dot
+
+    - unlearning_rate: 22e-2
+      cb_pow: 1.0
+      retaining_rate: 1e-3
+      cb_layers: [6, 7, 8]
+      cb_retaining_pow: 1.0
+      cb_type: norm
+
+    - unlearning_rate: 40e-2
+      cb_pow: 1.0
+      retaining_rate: 1e-3
+      cb_layers: [6, 7, 8]
+      cb_retaining_pow: 1.0
+      cb_type: cossim
+
