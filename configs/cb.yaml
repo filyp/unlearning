@@ -46,7 +46,7 @@ mask_n_most_common_tokens: null
 cut_off_tokens: 1
 cb_floor: 0.0
 cb_pow: 1.0
-cb_retaining_pow: 2.0
+cb_retaining_pow: 1.0
 # loss_fn_name: neg_cross_entropy
 # loss_fn_name: circuit_breaker
 loss_fn_name: circuit_breaker
@@ -65,35 +65,135 @@ retaining_loss_fn: cb_retain
 experiment_number: 0
 experiment_list:
 
-    # the one which doesn't debounce even without retaining
-    - unlearning_rate: 1.5e-2
-      cb_pow: 2.0
+    # # the one which doesn't debounce even without retaining
+    # - unlearning_rate: 1.5e-2
+    #   cb_pow: 2.0
 
-    - unlearning_rate: 7e-2
-      cb_pow: 2.0
-      retaining_rate: 4e-3
+    - unlearning_rate: 15e-2
+      retaining_rate: 1e-3
       cb_layers: [6, 7, 8]
 
     - unlearning_rate: 15e-2
-      cb_pow: 1.0
       retaining_rate: 1e-3
       cb_layers: [6, 7, 8]
-      cb_retaining_pow: 1.0
-      cb_type: dot
+      act_proj_num: 9
 
-    - unlearning_rate: 22e-2
-      cb_pow: 1.0
+    - unlearning_rate: 15e-2
       retaining_rate: 1e-3
       cb_layers: [6, 7, 8]
-      cb_retaining_pow: 1.0
-      cb_type: norm
+      grad_proj_num: 9
+
+    - unlearning_rate: 15e-2
+      retaining_rate: 1e-3
+      cb_layers: [6, 7, 8]
+      act_proj_num: 9
+      grad_proj_num: 9
+
+
 
     - unlearning_rate: 40e-2
-      cb_pow: 1.0
-      retaining_rate: 1e-3
       cb_layers: [6, 7, 8]
-      cb_retaining_pow: 1.0
-      cb_type: cossim
+      target_modules:
+          - gate_proj
+
+    - unlearning_rate: 10e-2
+      cb_layers: [6, 7, 8]
+      target_modules:
+          - up_proj
+
+    - unlearning_rate: 10e-2
+      cb_layers: [6, 7, 8]
+      target_modules:
+          - down_proj
+
+    - unlearning_rate: 20e-2
+      cb_layers: [6, 7, 8]
+      target_modules:
+          - gate_proj
+          - up_proj
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

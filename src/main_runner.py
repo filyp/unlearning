@@ -1,4 +1,9 @@
 # %%
+# usage:
+# python src/main_runner.py --config-name=CONFIG_NAME experiment_number=NUM
+# for example:
+# python src/main_runner.py --config-name=cb experiment_number=3
+# 
 # adapted from explorations/2_proj_training.py which also has some code for grad_proj,
 #     dm grad and dm act, and the traditional dm,
 #     mmlu evals, and per-token loss increase visualizations,
@@ -200,8 +205,11 @@ if cfg.loss_fn_name == "circuit_breaker":  # trim the model
     model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
 
 # * set trainable params
+logging.info(f"target_modules: {cfg.target_modules}")
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
+    if p.requires_grad:
+        logging.info(f"training {n}")
 
 if cfg.get("retain_to_original", False) or cfg.get("decay_to_orig", False):
     # assert num_gpus == 2
@@ -229,11 +237,6 @@ if (cfg.get("retaining_rate", 0) > 0) and (cfg.retaining_loss_fn == "cb_retain")
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
         batch["retain_acts"] = {l_num: output.hidden_states[l_num].detach().to("cpu") for l_num in cfg.cb_layers}
-
-# # * initialize kl_acc
-# for _, m in trainable_modules(model):
-#     m.kl_acc = pt.zeros_like(m.weight)
-
 
 if cfg.loss_fn_name == "circuit_breaker":
     # * cache the activations for circuit breaker
@@ -275,7 +278,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + f"_{is_dev}22.08.2025_2"  # todo change back
+group = args.config_name + f"_{is_dev}23.08.2025_3"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -357,11 +360,16 @@ for epoch in range(cfg.max_num_epochs):
                 max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
             )
 
-        # * clip grad norm
-        if "max_norm" not in globals():  # establish max_norm
-            max_norm = get_update_norm(model) * 1
-            logging.info(f"max_norm: {max_norm:7.5f}")
-        pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+        # # * clip grad norm
+        # if "max_norm" not in globals():  # establish max_norm
+        #     max_norm = get_update_norm(model) * 1
+        #     logging.info(f"max_norm: {max_norm:7.5f}")
+        # pt.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.max_norm)
+        # * normalize grads
+        norm = get_update_norm(model)
+        for p in model.parameters():
+            if p.grad is not None:
+                p.grad *= cfg.max_norm / norm
 
         unit_optimizer.step()  # unit_optimizer has lr=1.0
 
@@ -447,6 +455,12 @@ model.model.layers = all_layers  # for trimmed model
 if "retraining_epochs" not in cfg:
     exit(0)
 
+# * set trainable params
+mlp_modules = ["gate_proj", "up_proj", "down_proj"]
+for n, p in model.named_parameters():
+    p.requires_grad = any(pattern in n for pattern in mlp_modules)
+    if p.requires_grad:
+        logging.info(f"training {n}")
 
 wandb.init(
     project="ret_" + project_name,

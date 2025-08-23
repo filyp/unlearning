@@ -23,7 +23,6 @@ model_id: meta-llama/Llama-3.1-8B
 dataset: wmdp_cyber_simple
 num_examples_per_question: 3
 use_dev_split: false
-# use_dev_split: true
 
 max_num_epochs: 50
 
