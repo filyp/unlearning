@@ -52,6 +52,7 @@ cut_off_tokens: 1
 # loss_fn_name: circuit_breaker
 loss_fn_name: mlp_confuse
 mlp_range: [10, 20]
+mlp_stop_grad: false
 
 # retaining_loss_fn: cb_retain
 # retaining_rate: 1e-3
@@ -68,6 +69,14 @@ experiment_number: 0
 experiment_list:
 
     - loss_fn_name: mlp_confuse
+
+    - loss_fn_name: mlp_confuse
+      mlp_stop_grad: true
+
+    - loss_fn_name: mlp_confuse
+      mlp_stop_grad: true
+      act_proj_num: 15
+      grad_proj_num: 15
 
     - loss_fn_name: mlp_confuse
       act_proj_num: 12

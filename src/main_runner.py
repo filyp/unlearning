@@ -276,9 +276,18 @@ if cfg.loss_fn_name == "mlp_confuse":
     def save_acts_hook(module, args, output):
         # module.cached_in = args[0]
         module.cached_out = output
+    
+    def stop_grad_hook(module, grad_input, grad_output):
+        if grad_input[0] is None:
+            # this happens on layer 0, with requires_grad=False on 1st MLP layer
+            return
+        # return [pt.zeros_like(grad_input[0])] + list(grad_input[1:])
+        return [None] + list(grad_input[1:])
 
     for layer_id in range(*cfg.mlp_range):
         model.model.layers[layer_id].mlp.register_forward_hook(save_acts_hook)
+        if cfg.mlp_stop_grad:
+            model.model.layers[layer_id].mlp.register_full_backward_hook(stop_grad_hook)
 
     # * cache the activations for MLP confusion
     for batch in training_batches:
