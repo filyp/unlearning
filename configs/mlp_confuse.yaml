@@ -69,5 +69,9 @@ experiment_number: 0
 experiment_list:
 
     - loss_fn_name: mlp_confuse
+      mlp_range: [14, 15]
 
     - loss_fn_name: mlp_static_confuse
+      mlp_range: [14, 15]
+      # act_proj_num: 5
+      # grad_proj_num: 5

@@ -274,7 +274,7 @@ if cfg.loss_fn_name == "circuit_breaker":
     #     batch["act_for_cb"] = rep.cpu()
 
 
-if cfg.loss_fn_name == "mlp_confuse":
+if cfg.loss_fn_name in ["mlp_confuse", "mlp_static_confuse"]:
     # * install hooks for MLPs
     def save_acts_hook(module, args, output):
         module.cached_in = args[0]
@@ -366,6 +366,7 @@ for epoch in range(cfg.max_num_epochs):
                 loss = loss_fns.mlp_confuse_single_mlp_loss(
                     out, batch, cfg, answer_mask, layer_id
                 )
+                # logging.info(f"{b_num=} {layer_id=} {loss=} {loss.item():.4f}")
                 loss.backward()
         else:
             output = model(**batch, output_hidden_states=True)
@@ -410,7 +411,7 @@ for epoch in range(cfg.max_num_epochs):
         if b_num == 0:
             stats = dict(
                 update_norm=get_update_norm(model),
-                act_norm=output.hidden_states[5].norm(dim=-1).mean(),
+                # act_norm=output.hidden_states[5].norm(dim=-1).mean(),
                 # min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
                 # max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
             )
@@ -484,8 +485,11 @@ for epoch in range(cfg.max_num_epochs):
     if cfg.algorithm == "CIR":
         # ! calculate means and PCA components
         # _start_time = time.time()
-        act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
-        grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
+        if cfg.loss_fn_name != "mlp_static_confuse" or epoch == 0:
+            # always calculate it for losses other than mlp_static_confuse
+            # for mlp_static_confuse, only do it at the start of training
+            act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
+            grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
         # logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
         if epoch == 0:
             continue  # no need to report metrics, because nothing has changed
