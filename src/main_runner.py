@@ -3,7 +3,7 @@
 # python src/main_runner.py --config-name=CONFIG_NAME experiment_number=NUM
 # for example:
 # python src/main_runner.py --config-name=cb experiment_number=3
-# 
+#
 # adapted from explorations/2_proj_training.py which also has some code for grad_proj,
 #     dm grad and dm act, and the traditional dm,
 #     mmlu evals, and per-token loss increase visualizations,
@@ -58,7 +58,7 @@ if get_ipython() is None:
         cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
 else:
     logging.info("Running in Jupyter")
-    cfg = OmegaConf.load("../configs/cb.yaml")  # for debugging
+    cfg = OmegaConf.load("../configs/mlp_confuse.yaml")  # for debugging
     cfg.model_id = "meta-llama/Llama-3.2-1B"  # locally we can use only 1B
 with open_dict(cfg):
     cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
@@ -202,7 +202,7 @@ model = AutoModelForCausalLM.from_pretrained(
 model.config.use_cache = False
 all_layers = model.model.layers  # for trimmed model
 if cfg.loss_fn_name == "circuit_breaker":  # trim the model
-    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+    model.model.layers = model.model.layers[: max(cfg.cb_layers) + 1]
 
 # * set trainable params
 logging.info(f"target_modules: {cfg.target_modules}")
@@ -232,11 +232,14 @@ retraining_optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
 retain_batches = retain_batches[: len(training_batches)]
 if (cfg.get("retaining_rate", 0) > 0) and (cfg.retaining_loss_fn == "cb_retain"):
     # if cfg.get("retain_on_neg_mask", False):
-        # _act_cache_batches = training_batches
+    # _act_cache_batches = training_batches
     for batch in retain_batches:
         with pt.no_grad():
             output = model(**batch, output_hidden_states=True)
-        batch["retain_acts"] = {l_num: output.hidden_states[l_num].detach().to("cpu") for l_num in cfg.cb_layers}
+        batch["retain_acts"] = {
+            l_num: output.hidden_states[l_num].detach().to("cpu")
+            for l_num in cfg.cb_layers
+        }
 
 if cfg.loss_fn_name == "circuit_breaker":
     # * cache the activations for circuit breaker
@@ -245,7 +248,7 @@ if cfg.loss_fn_name == "circuit_breaker":
             output = model(**batch, output_hidden_states=True)
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
-        _mask[:, :cfg.cut_off_tokens] = False
+        _mask[:, : cfg.cut_off_tokens] = False
         batch["act_for_cb"] = {}
         batch["avg_act_norm"] = {}
         for layer_id in cfg.cb_layers:
@@ -274,9 +277,9 @@ if cfg.loss_fn_name == "circuit_breaker":
 if cfg.loss_fn_name == "mlp_confuse":
     # * install hooks for MLPs
     def save_acts_hook(module, args, output):
-        # module.cached_in = args[0]
+        module.cached_in = args[0]
         module.cached_out = output
-    
+
     def stop_grad_hook(module, grad_input, grad_output):
         if grad_input[0] is None:
             # this happens on layer 0, with requires_grad=False on 1st MLP layer
@@ -295,15 +298,17 @@ if cfg.loss_fn_name == "mlp_confuse":
             output = model(**batch)
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
-        _mask[:, :cfg.cut_off_tokens] = False
+        _mask[:, : cfg.cut_off_tokens] = False
         batch["org_mlp_out"] = {}
         batch["org_mlp_out_norm"] = {}
+        batch["org_mlp_in"] = {}
         for layer_id in range(*cfg.mlp_range):
-            out = model.model.layers[layer_id].mlp.cached_out
+            mlp = model.model.layers[layer_id].mlp
+            out = mlp.cached_out
             out = out.detach()[_mask]
             batch["org_mlp_out"][layer_id] = out.cpu()
             batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
-
+            batch["org_mlp_in"][layer_id] = mlp.cached_in.detach().cpu()
 
 # %%
 # script name -> project
@@ -329,7 +334,7 @@ wandb.init(
 model.model.layers = all_layers  # for trimmed model
 init_res = get_metrics(model)
 if cfg.loss_fn_name == "circuit_breaker":  # trim the model
-    model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+    model.model.layers = model.model.layers[: max(cfg.cb_layers) + 1]
 
 wandb.log(init_res)
 assert cfg.algorithm in ["CIR", "GA"]
@@ -351,14 +356,25 @@ for epoch in range(cfg.max_num_epochs):
         # ! unlearning loss
         model.zero_grad(set_to_none=True)
         pt.cuda.empty_cache()
-        output = model(**batch, output_hidden_states=True)
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
-        loss_fn = getattr(loss_fns, cfg.loss_fn_name)
-        if cfg.loss_fn_name == "mlp_confuse":
-            loss = loss_fn(model, batch, cfg, answer_mask)
+
+        if cfg.loss_fn_name == "mlp_static_confuse":
+            for layer_id in range(*cfg.mlp_range):
+                mlp = model.model.layers[layer_id].mlp
+                org_in = batch["org_mlp_in"][layer_id].to(device_main)
+                out = mlp(org_in)
+                loss = loss_fns.mlp_confuse_single_mlp_loss(
+                    out, batch, cfg, answer_mask, layer_id
+                )
+                loss.backward()
         else:
-            loss = loss_fn(output, batch, cfg, answer_mask)
-        loss.backward()
+            output = model(**batch, output_hidden_states=True)
+            loss_fn = getattr(loss_fns, cfg.loss_fn_name)
+            if cfg.loss_fn_name == "mlp_confuse":
+                loss = loss_fn(model, batch, cfg, answer_mask)
+            else:
+                loss = loss_fn(output, batch, cfg, answer_mask)
+            loss.backward()
 
         # ! here we modify the grad
         if cfg.algorithm == "CIR":
@@ -393,8 +409,8 @@ for epoch in range(cfg.max_num_epochs):
 
         if b_num == 0:
             stats = dict(
-                update_norm = get_update_norm(model),
-                act_norm = output.hidden_states[5].norm(dim=-1).mean(),
+                update_norm=get_update_norm(model),
+                act_norm=output.hidden_states[5].norm(dim=-1).mean(),
                 # min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
                 # max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
             )
@@ -448,7 +464,7 @@ for epoch in range(cfg.max_num_epochs):
                     w = model.get_submodule(n).weight
                     if w.grad is None:
                         continue
-                    orig_w = original_weights[n] #.to(device_main, dtype=pt.bfloat16)
+                    orig_w = original_weights[n]  # .to(device_main, dtype=pt.bfloat16)
                     # filter out if diff=0 too:
                     mask = (w - orig_w).sign() != w.grad.sign()
                     # mask = ((w - orig_w).sign() * w.grad.sign()) == -1  # this mask is more permissive; but when computing in 16bit, it doesn't matter anyway, only in 8bit
@@ -456,7 +472,7 @@ for epoch in range(cfg.max_num_epochs):
 
             scale_grads_(model, cfg.retaining_rate)  # apply intended lr
             unit_optimizer.step()  # unit_optimizer has lr=1.0
-        
+
         if cfg.get("decay_to_orig", False):
             for n, orig_w in original_weights.items():
                 w = model.get_submodule(n).weight
@@ -478,7 +494,7 @@ for epoch in range(cfg.max_num_epochs):
     model.model.layers = all_layers  # for trimmed model
     res = get_metrics(model)
     if cfg.loss_fn_name == "circuit_breaker":  # trim the model
-        model.model.layers = model.model.layers[:max(cfg.cb_layers) + 1]
+        model.model.layers = model.model.layers[: max(cfg.cb_layers) + 1]
 
     wandb.log(res | stats)
     if res["wikitext_loss"] > init_res["wikitext_loss"] * cfg.get("loss_budget", 1.01):

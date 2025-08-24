@@ -70,24 +70,4 @@ experiment_list:
 
     - loss_fn_name: mlp_confuse
 
-    - loss_fn_name: mlp_confuse
-      mlp_stop_grad: true
-
-    - loss_fn_name: mlp_confuse
-      mlp_stop_grad: true
-      act_proj_num: 15
-      grad_proj_num: 15
-
-    - loss_fn_name: mlp_confuse
-      act_proj_num: 12
-      grad_proj_num: 9
-
-    - loss_fn_name: mlp_confuse
-      act_proj_num: 15
-      grad_proj_num: 15
-      
-    - loss_fn_name: mlp_confuse
-      act_proj_num: 15
-      grad_proj_num: 15
-      loss_budget: 1.01
-      
+    - loss_fn_name: mlp_static_confuse
