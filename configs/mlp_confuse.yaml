@@ -1,0 +1,84 @@
+# general, unlikely to change
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+train_batch_size: 32  # can be higher because batches are usually shorter
+wikitext_batch_size: 16
+retain_batch_size: 16
+num_eval_batches: 8  # will make it slower, but for final plots make it bigger
+target_modules:
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
+# todo try mistralai/Mistral-7B-Instruct-v0.2
+
+# dataset: wmdp_cyber_pairs
+# dataset: wmdp_cyber_pairs_only_ans
+# dataset: wmdp_cyber_deebs
+dataset: wmdp_cyber_simple
+num_examples_per_question: 3
+use_dev_split: false
+
+# max_num_epochs: 50
+max_num_epochs: 100
+
+retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
+# retraining_rate: 1e-6
+retraining_epochs: 50
+eval_on_all_questions: false
+
+# default experiment config
+algorithm: CIR
+# loss_budget: 1.01
+loss_budget: 1.005
+cir_niter: 16
+comment: null
+mask_n_most_common_tokens: null
+# mask_n_most_common_tokens: 50
+# eval_on_all_questions: true  # best to just use it when not retraining
+# rep_proj_num: 0 # deprecated
+act_proj_num: 9
+grad_proj_num: 6
+#
+cut_off_tokens: 1
+# loss_fn_name: neg_cross_entropy
+# loss_fn_name: circuit_breaker
+# loss_fn_name: circuit_breaker
+loss_fn_name: mlp_confuse
+mlp_range: [10, 20]
+
+# retaining_loss_fn: cb_retain
+# retaining_rate: 1e-3
+unlearning_rate: 1  # should have no effect when max_norm is set
+max_norm: 0.06
+
+# cb_type: dot
+# cb_layers: [6, 7, 8]
+# cb_floor: 0.0
+# cb_pow: 1.0
+# cb_retaining_pow: 1.0
+
+experiment_number: 0
+experiment_list:
+
+    - loss_fn_name: mlp_confuse
+
+    - loss_fn_name: mlp_confuse
+      act_proj_num: 12
+      grad_proj_num: 9
+
+    - loss_fn_name: mlp_confuse
+      act_proj_num: 15
+      grad_proj_num: 15
+      
+    - loss_fn_name: mlp_confuse
+      act_proj_num: 15
+      grad_proj_num: 15
+      loss_budget: 1.01
+      

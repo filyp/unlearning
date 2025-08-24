@@ -209,12 +209,12 @@ experiment_list:
       retaining_rate: 1e-3
 
 
-
     - cb_layers: [6, 7, 8]
       retaining_rate: 1e-3
 
     - cb_layers: [6]
       retaining_rate: 1e-3
+      cir_niter: 16
 
     - cb_layers: [12]
       retaining_rate: 1e-3
@@ -229,6 +229,14 @@ experiment_list:
     - cb_layers: [10, 20]
       retaining_rate: 1e-3
 
+
+    - cb_layers: [6]
+      retaining_rate: 1e-3
+      act_proj_num: 0
+      grad_proj_num: 0
+      max_norm: 0.02
+      
+    - cb_layers: [12]
 
 
 

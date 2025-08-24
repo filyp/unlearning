@@ -242,7 +242,7 @@ if cfg.loss_fn_name == "circuit_breaker":
     # * cache the activations for circuit breaker
     for batch in training_batches:
         with pt.no_grad():
-            output = model(**batch, output_hidden_states=True, return_dict=True)
+            output = model(**batch, output_hidden_states=True)
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
         _mask[:, :cfg.cut_off_tokens] = False
@@ -271,6 +271,31 @@ if cfg.loss_fn_name == "circuit_breaker":
     #     batch["act_for_cb"] = rep.cpu()
 
 
+if cfg.loss_fn_name == "mlp_confuse":
+    # * install hooks for MLPs
+    def save_acts_hook(module, args, output):
+        # module.cached_in = args[0]
+        module.cached_out = output
+
+    for layer_id in range(*cfg.mlp_range):
+        model.model.layers[layer_id].mlp.register_forward_hook(save_acts_hook)
+
+    # * cache the activations for MLP confusion
+    for batch in training_batches:
+        with pt.no_grad():
+            output = model(**batch)
+        _mask = batch.get("answer_mask", batch["attention_mask"])
+        _mask = _mask.bool().clone()
+        _mask[:, :cfg.cut_off_tokens] = False
+        batch["org_mlp_out"] = {}
+        batch["org_mlp_out_norm"] = {}
+        for layer_id in range(*cfg.mlp_range):
+            out = model.model.layers[layer_id].mlp.cached_out
+            out = out.detach()[_mask]
+            batch["org_mlp_out"][layer_id] = out.cpu()
+            batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
+
+
 # %%
 # script name -> project
 # config name & hash -> group
@@ -278,7 +303,8 @@ if cfg.loss_fn_name == "circuit_breaker":
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + f"_{is_dev}23.08.2025_3"  # todo change back
+# group = args.config_name + f"_{is_dev}23.08.2025_3"  # todo change back
+group = "cb_target_modules_plot" + f"_{is_dev}23.08.2025_3"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
@@ -319,7 +345,10 @@ for epoch in range(cfg.max_num_epochs):
         output = model(**batch, output_hidden_states=True)
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
-        loss = loss_fn(output, batch, cfg, answer_mask)
+        if cfg.loss_fn_name == "mlp_confuse":
+            loss = loss_fn(model, batch, cfg, answer_mask)
+        else:
+            loss = loss_fn(output, batch, cfg, answer_mask)
         loss.backward()
 
         # ! here we modify the grad
@@ -356,8 +385,9 @@ for epoch in range(cfg.max_num_epochs):
         if b_num == 0:
             stats = dict(
                 update_norm = get_update_norm(model),
-                min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
-                max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
+                act_norm = output.hidden_states[5].norm(dim=-1).mean(),
+                # min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
+                # max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
             )
 
         # # * clip grad norm
