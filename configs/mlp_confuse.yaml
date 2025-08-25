@@ -36,7 +36,8 @@ eval_on_all_questions: false
 # default experiment config
 algorithm: CIR
 # loss_budget: 1.01
-loss_budget: 1.005
+# loss_budget: 1.005
+loss_budget: 1.0025
 cir_niter: 16
 comment: null
 mask_n_most_common_tokens: null
@@ -55,22 +56,104 @@ mlp_range: [10, 20]
 
 # retaining_loss_fn: cb_retain
 # retaining_rate: 1e-3
-unlearning_rate: 1  # should have no effect when max_norm is set
+# unlearning_rate: 1  # should have no effect when max_norm is set
 max_norm: 0.06
 
-# cb_type: dot
+cb_type: dot
 # cb_layers: [6, 7, 8]
-# cb_floor: 0.0
-# cb_pow: 1.0
-# cb_retaining_pow: 1.0
+cb_floor: 0.0
+cb_pow: 1.0
+cb_retaining_pow: 1.0
+mlp_retaining_pow: 1.0
 
 experiment_number: 0
 experiment_list:
 
     - loss_fn_name: mlp_confuse
-      mlp_range: [14, 15]
+      mlp_range: [5, 10]
 
-    - loss_fn_name: mlp_static_confuse
-      mlp_range: [14, 15]
-      # act_proj_num: 5
-      # grad_proj_num: 5
+    - loss_fn_name: mlp_confuse
+      mlp_range: [10, 15]
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [15, 20]
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [20, 25]
+
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [10, 20]
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 25]
+
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [10, 20]
+      retaining_loss_fn: cb_retain
+      cb_layers: [10, 15, 20]
+      retaining_rate: 1e-3
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [25, 30]
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+      retaining_loss_fn: cb_retain
+      cb_layers: [5, 10, 15]
+      retaining_rate: 1e-3
+      loss_budget: 1.0025
+
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [12]
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [12]
+      retaining_loss_fn: cb_retain
+      retaining_rate: 1e-3
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [5, 10, 15]
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [5, 10, 15]
+      retaining_loss_fn: cb_retain
+      retaining_rate: 1e-3
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+      retaining_loss_fn: mlp_confuse_retain
+      retaining_rate: 1e-3
+      mlp_retaining_pow: 2.0
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+      retaining_loss_fn: cb_retain
+      retaining_rate: 1e-3
+
+
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+      retaining_loss_fn: cb_retain
+      retaining_rate: 1e-3
+      mlp_retaining_pow: 2.0
+      cb_layers: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+
+
+
+
+
+
+
+
+
+
+
+
+

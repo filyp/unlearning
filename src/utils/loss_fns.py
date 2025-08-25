@@ -159,23 +159,45 @@ def mlp_confuse(model, batch, cfg, answer_mask=None):
     return loss_acc / len(range(*cfg.mlp_range))
 
 
-def mlp_confuse_single_mlp_loss(out, batch, cfg, answer_mask=None, layer_id=None):
+def mlp_confuse_retain(model, batch, cfg, answer_mask=None):
     _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
     _mask = _mask.bool().clone()
-    _mask[:, :cfg.cut_off_tokens] = False
+    _mask[:, :cfg.cut_off_tokens] = False # todo try without this too
 
-    out = out[_mask].float()
+    loss_acc = 0
+    for layer_id in range(*cfg.mlp_range):
+        out = model.model.layers[layer_id].mlp.cached_out
+        out = out[_mask].float()
+        org_out = batch["org_mlp_out_retain"][layer_id].to(out.device).float()
+        assert out.shape == org_out.shape
+        assert len(out.shape) == 2
 
-    org_out = batch["org_mlp_out"][layer_id].to(out.device).float()
-    assert out.shape == org_out.shape
-    assert len(out.shape) == 2
+        org_norm = batch["org_mlp_out_retain_norm"][layer_id].to(out.device)
 
-    org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
-    dotproducts = pt.einsum("ts,ts->t", out, org_out)
-    dotproducts = dotproducts / org_norm ** 2
-    # logging.debug(dotproducts)
-    loss = dotproducts.clip(min=0).mean()
-    return loss
+        dist = (out - org_out).norm(dim=-1).mean() / org_norm
+        loss_acc += dist ** cfg.mlp_retaining_pow
+
+    return loss_acc / len(range(*cfg.mlp_range))
+
+
+
+# def mlp_confuse_single_mlp_loss(out, batch, cfg, answer_mask=None, layer_id=None):
+#     _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
+#     _mask = _mask.bool().clone()
+#     _mask[:, :cfg.cut_off_tokens] = False
+
+#     out = out[_mask].float()
+
+#     org_out = batch["org_mlp_out"][layer_id].to(out.device).float()
+#     assert out.shape == org_out.shape
+#     assert len(out.shape) == 2
+
+#     org_norm = batch["org_mlp_out_norm"][layer_id].to(out.device)
+#     dotproducts = pt.einsum("ts,ts->t", out, org_out)
+#     dotproducts = dotproducts / org_norm ** 2
+#     # logging.debug(dotproducts)
+#     loss = dotproducts.clip(min=0).mean()
+#     return loss
 
 
 # def proj_out_target(output, batch, answer_mask, model):
