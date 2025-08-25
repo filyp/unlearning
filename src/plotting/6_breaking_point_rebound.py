@@ -201,7 +201,7 @@ plt.plot([0.25, 0.65], [0.25, 0.65], color="red", linestyle="-", alpha=0.7, labe
 plt.gca().set_aspect("equal")
 
 # Add labels and title (flipped)
-plt.xlabel("WMDP Accuracy During Retraining")
+plt.xlabel("WMDP Accuracy During Fine-Tuning Attack")
 plt.ylabel("WMDP Accuracy at 0.1% Disruption Threshold")
 # plt.title('Retention Recovery: First to Last Accuracy Transition')
 plt.legend()
@@ -228,5 +228,12 @@ np.savez(
     first_ret_accs=first_ret_accs,
     last_ret_accs=last_ret_accs,
 )
+
+# %%
+# load
+data = np.load(repo_root() / "data/breaking_points_plot.npz")
+breaking_points = data["breaking_points"]
+first_ret_accs = data["first_ret_accs"]
+last_ret_accs = data["last_ret_accs"]
 
 # %%
