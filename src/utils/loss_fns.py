@@ -162,10 +162,10 @@ def mlp_confuse(model, batch, cfg, answer_mask=None):
 def mlp_confuse_retain(model, batch, cfg, answer_mask=None):
     _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
     _mask = _mask.bool().clone()
-    _mask[:, :cfg.cut_off_tokens] = False # todo try without this too
+    # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
 
     loss_acc = 0
-    for layer_id in range(*cfg.mlp_range):
+    for layer_id in range(*cfg.mlp_retain_range):
         out = model.model.layers[layer_id].mlp.cached_out
         out = out[_mask].float()
         org_out = batch["org_mlp_out_retain"][layer_id].to(out.device).float()

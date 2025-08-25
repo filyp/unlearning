@@ -101,12 +101,16 @@ experiment_list:
     - loss_fn_name: mlp_confuse
       mlp_range: [5, 15]
 
+
+
     - loss_fn_name: mlp_confuse
       mlp_range: [5, 15]
-      retaining_loss_fn: cb_retain
+      retaining_loss_fns: [cb_retain]
       cb_layers: [5, 10, 15]
       retaining_rate: 1e-3
-      loss_budget: 1.0025
+      cb_retaining_pow: 1.0
+      max_norm: 0.04
+
 
 
     - loss_fn_name: circuit_breaker
@@ -127,9 +131,12 @@ experiment_list:
 
     - loss_fn_name: mlp_confuse
       mlp_range: [5, 15]
-      retaining_loss_fn: mlp_confuse_retain
+      mlp_retain_range: [5, 15]
+      retaining_loss_fns: [mlp_confuse_retain, cb_retain]
+      cb_layers: [5, 10, 15]
       retaining_rate: 1e-3
-      mlp_retaining_pow: 2.0
+      mlp_retaining_pow: 1.0
+      # max_norm: 0.04
 
     - loss_fn_name: circuit_breaker
       cb_layers: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
@@ -144,16 +151,20 @@ experiment_list:
       mlp_retaining_pow: 2.0
       cb_layers: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+      retaining_loss_fns: [mlp_confuse_retain]
+      mlp_retain_range: [5, 20]
+      retaining_rate: 1e-3
+      mlp_retaining_pow: 1.0
 
 
-
-
-
-
-
-
-
-
-
+    - loss_fn_name: mlp_confuse
+      mlp_range: [5, 15]
+      retaining_loss_fns: [cb_retain]
+      cb_layers: [5, 10, 15]
+      retaining_rate: 1e-3
+      mlp_retaining_pow: 2.0
+      max_norm: 0.04
 
 
