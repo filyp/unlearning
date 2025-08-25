@@ -274,7 +274,7 @@ if cfg.loss_fn_name == "circuit_breaker":
     #     batch["act_for_cb"] = rep.cpu()
 
 
-if cfg.loss_fn_name in ["mlp_confuse", "mlp_static_confuse"]:
+if cfg.loss_fn_name in ["mlp_confuse"]:
     # * install hooks for MLPs
     def save_acts_hook(module, args, output):
         module.cached_in = args[0]
@@ -289,8 +289,16 @@ if cfg.loss_fn_name in ["mlp_confuse", "mlp_static_confuse"]:
 
     for layer_id in range(*cfg.mlp_range):
         model.model.layers[layer_id].mlp.register_forward_hook(save_acts_hook)
-        if cfg.mlp_stop_grad:
-            model.model.layers[layer_id].mlp.register_full_backward_hook(stop_grad_hook)
+        # if cfg.mlp_stop_grad:
+        #     model.model.layers[layer_id].mlp.gate_proj.register_full_backward_hook(stop_grad_hook)
+        #     model.model.layers[layer_id].mlp.up_proj.register_full_backward_hook(stop_grad_hook)
+    # if cfg.mlp_stop_grad:
+        # for layer_id in range(len(model.model.layers)):
+        #     if layer_id < cfg.mlp_range[0] or layer_id >= cfg.mlp_range[1]:
+        #         model.model.layers[layer_id].mlp.gate_proj.weight.requires_grad = False
+        #         model.model.layers[layer_id].mlp.up_proj.weight.requires_grad = False
+        #         model.model.layers[layer_id].mlp.down_proj.weight.requires_grad = False
+
 
     # * cache the activations for MLP confusion
     for batch in training_batches:
@@ -358,24 +366,13 @@ for epoch in range(cfg.max_num_epochs):
         pt.cuda.empty_cache()
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
 
-        if cfg.loss_fn_name == "mlp_static_confuse":
-            for layer_id in range(*cfg.mlp_range):
-                mlp = model.model.layers[layer_id].mlp
-                org_in = batch["org_mlp_in"][layer_id].to(device_main)
-                out = mlp(org_in)
-                loss = loss_fns.mlp_confuse_single_mlp_loss(
-                    out, batch, cfg, answer_mask, layer_id
-                )
-                # logging.info(f"{b_num=} {layer_id=} {loss=} {loss.item():.4f}")
-                loss.backward()
+        output = model(**batch, output_hidden_states=True)
+        loss_fn = getattr(loss_fns, cfg.loss_fn_name)
+        if cfg.loss_fn_name == "mlp_confuse":
+            loss = loss_fn(model, batch, cfg, answer_mask)
         else:
-            output = model(**batch, output_hidden_states=True)
-            loss_fn = getattr(loss_fns, cfg.loss_fn_name)
-            if cfg.loss_fn_name == "mlp_confuse":
-                loss = loss_fn(model, batch, cfg, answer_mask)
-            else:
-                loss = loss_fn(output, batch, cfg, answer_mask)
-            loss.backward()
+            loss = loss_fn(output, batch, cfg, answer_mask)
+        loss.backward()
 
         # ! here we modify the grad
         if cfg.algorithm == "CIR":
@@ -485,11 +482,8 @@ for epoch in range(cfg.max_num_epochs):
     if cfg.algorithm == "CIR":
         # ! calculate means and PCA components
         # _start_time = time.time()
-        if cfg.loss_fn_name != "mlp_static_confuse" or epoch == 0:
-            # always calculate it for losses other than mlp_static_confuse
-            # for mlp_static_confuse, only do it at the start of training
-            act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
-            grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
+        act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
+        grad_to_collapse = get_projections(grads_list, cfg.grad_proj_num, cfg.cir_niter)
         # logging.info(f"time taken to calculate PCA: {time.time() - _start_time:.2f}s")
         if epoch == 0:
             continue  # no need to report metrics, because nothing has changed

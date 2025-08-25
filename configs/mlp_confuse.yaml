@@ -52,7 +52,6 @@ cut_off_tokens: 1
 # loss_fn_name: circuit_breaker
 loss_fn_name: mlp_confuse
 mlp_range: [10, 20]
-mlp_stop_grad: false
 
 # retaining_loss_fn: cb_retain
 # retaining_rate: 1e-3
