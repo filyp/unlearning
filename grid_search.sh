@@ -21,7 +21,7 @@ for act_proj in "${proj_nums[@]}"; do
         job_count=$((job_count + 1))
         
         # Create command
-        cmd="python src/main_runner.py --config-name=proj_num_grid_search act_proj_num=${act_proj} grad_proj_num=${grad_proj}"
+        cmd="python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 act_proj_num=${act_proj} grad_proj_num=${grad_proj}"
         
         echo "Job ${job_count}: Submitting act_proj_num=${act_proj}, grad_proj_num=${grad_proj}"
         

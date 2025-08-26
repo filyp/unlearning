@@ -24,7 +24,7 @@ dataset: wmdp_cyber_simple
 num_examples_per_question: 3
 use_dev_split: false
 
-max_num_epochs: 200
+max_num_epochs: 500
 
 retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
 retraining_epochs: 50
@@ -32,8 +32,8 @@ eval_on_all_questions: false
 
 # default experiment config
 algorithm: CIR
-loss_budget: 1.005
-# loss_budget: 1.0025
+# loss_budget: 1.005
+loss_budget: 1.002
 cir_niter: 16
 comment: null
 mask_n_most_common_tokens: null
@@ -45,9 +45,9 @@ loss_fn_name: mlp_confuse
 mlp_range: [6, 15]
 mlp_floor: 0.0
 
-act_proj_num: 0
-grad_proj_num: 0
-max_norm: 0.01
+act_proj_num: ???
+grad_proj_num: ???
+max_norm: 0.02
 
 # cb_type: dot
 # cb_floor: 0.0
@@ -59,8 +59,7 @@ max_norm: 0.01
 # cb_layers: [5, 10, 15]
 # cb_retaining_pow: 1.0
 
-experiment_number: 0
 experiment_list:
 
-    - act_proj_num: 0
-      grad_proj_num: 0
+    # empty
+    - {}

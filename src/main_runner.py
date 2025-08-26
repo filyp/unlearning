@@ -1,8 +1,8 @@
 # %%
 # usage:
-# python src/main_runner.py --config-name=CONFIG_NAME experiment_number=NUM
+# python src/main_runner.py --config-name=CONFIG_NAME --exp-num=NUM
 # for example:
-# python src/main_runner.py --config-name=cb experiment_number=3
+# python src/main_runner.py --config-name=cb --exp-num=3
 #
 # adapted from explorations/2_proj_training.py which also has some code for grad_proj,
 #     dm grad and dm act, and the traditional dm,
@@ -352,11 +352,8 @@ project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix(
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
 group = args.config_name + f"_{is_dev}26.08.2025"  # todo change back
-# group = "cb_target_modules_plot" + f"_{is_dev}24.08.2025"  # todo change back
-# remove experiment_number from remaining_args
-_args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
-remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
-run_name = f"{cfg.experiment_number}|{_args}|{'_'.join(remaining_args)}"
+_args = "_".join(str(v) for v in cfg.experiment_list[args.exp_num].values())
+run_name = f"{args.exp_num}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
     project=project_name,
     group=group,
