@@ -54,21 +54,19 @@ parser.add_argument("--config-name")
 parser.add_argument("--exp-num", type=int)
 args, remaining_args = parser.parse_known_args()
 
-if get_ipython() is None:
-    with hydra.initialize(config_path="../configs", version_base="1.2"):
-        # Load base config without overrides first
-        base_cfg = hydra.compose(config_name=args.config_name)
-        cfg = OmegaConf.merge(
-            base_cfg, 
-            base_cfg.experiment_list[args.exp_num],
-            OmegaConf.from_dotlist(remaining_args)
-        )
-else:
-    logging.info("Running in Jupyter")
-    cfg = OmegaConf.load("../configs/mlp_confuse.yaml")  # for debugging
-    cfg.model_id = "meta-llama/Llama-3.2-1B"  # locally we can use only 1B
-    with open_dict(cfg):
-        cfg = OmegaConf.merge(cfg, cfg.experiment_list[0])
+if get_ipython() is not None:
+    args.config_name = "mlp_confuse"
+    args.exp_num = 0
+    remaining_args = ["model_id=meta-llama/Llama-3.2-1B"]  # locally we use only 1B
+
+with hydra.initialize(config_path="../configs", version_base="1.2"):
+    # Load base config without overrides first
+    base_cfg = hydra.compose(config_name=args.config_name)
+    cfg = OmegaConf.merge(
+        base_cfg, 
+        base_cfg.experiment_list[args.exp_num],
+        OmegaConf.from_dotlist(remaining_args)
+    )
 
 
 # ! setup

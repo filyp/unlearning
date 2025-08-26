@@ -51,7 +51,7 @@ cut_off_tokens: 1
 # loss_fn_name: neg_cross_entropy
 # loss_fn_name: circuit_breaker
 # loss_fn_name: circuit_breaker
-loss_fn_name: mlp_confuse
+# loss_fn_name: mlp_confuse
 mlp_range: [10, 20]
 
 # retaining_loss_fn: cb_retain
@@ -60,12 +60,16 @@ mlp_range: [10, 20]
 max_norm: 0.05
 
 cb_type: dot
-# cb_layers: [6, 7, 8]
 cb_floor: 0.0
 cb_pow: 1.0
 cb_retaining_pow: 1.0
 mlp_retaining_pow: 1.0
 mlp_floor: 0
+
+loss_fn_name: ???
+cb_layers: ???
+retaining_loss_fns: ???
+retaining_rate: ???
 
 experiment_list:
 
