@@ -153,7 +153,7 @@ def mlp_confuse(model, batch, cfg, answer_mask=None):
         dotproducts = pt.einsum("ts,ts->t", out, org_out)
         dotproducts = dotproducts / org_norm ** 2
         # logging.debug(dotproducts)
-        loss_acc += dotproducts.clip(min=0).mean()
+        loss_acc += dotproducts.clip(min=cfg.mlp_floor).mean()
         # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
 
     return loss_acc / len(range(*cfg.mlp_range))

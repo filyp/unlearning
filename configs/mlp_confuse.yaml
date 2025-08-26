@@ -57,7 +57,7 @@ mlp_range: [10, 20]
 # retaining_loss_fn: cb_retain
 # retaining_rate: 1e-3
 # unlearning_rate: 1  # should have no effect when max_norm is set
-max_norm: 0.06
+max_norm: 0.05
 
 cb_type: dot
 # cb_layers: [6, 7, 8]
@@ -65,9 +65,56 @@ cb_floor: 0.0
 cb_pow: 1.0
 cb_retaining_pow: 1.0
 mlp_retaining_pow: 1.0
+mlp_floor: 0
 
 experiment_number: 0
 experiment_list:
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [5, 10, 15]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+
+    - loss_fn_name: mlp_confuse
+      cb_layers: [5, 10, 15]
+      mlp_range: [5, 15]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [5, 10, 15]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+      cb_floor: 0.25
+
+    - loss_fn_name: mlp_confuse
+      cb_layers: [5, 10, 15]
+      mlp_range: [5, 15]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+      mlp_floor: -0.4
+      act_proj_num: 9
+      grad_proj_num: 9
+
+
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [12]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+
+    - loss_fn_name: circuit_breaker
+      cb_layers: [12]
+      retaining_loss_fns: [cb_retain]
+      retaining_rate: 1e-3
+      cb_floor: -0.4
+
+
+
+
+
+
 
     - loss_fn_name: mlp_confuse
       mlp_range: [5, 10]

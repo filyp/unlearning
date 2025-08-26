@@ -345,8 +345,8 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
 # group = args.config_name + "_" + get_conf_hash(args.config_name)
-# group = args.config_name + f"_{is_dev}23.08.2025_3"  # todo change back
-group = "cb_target_modules_plot" + f"_{is_dev}24.08.2025"  # todo change back
+group = args.config_name + f"_{is_dev}26.08.2025"  # todo change back
+# group = "cb_target_modules_plot" + f"_{is_dev}24.08.2025"  # todo change back
 # remove experiment_number from remaining_args
 _args = "_".join(str(v) for v in cfg.experiment_list[cfg.experiment_number].values())
 remaining_args = [arg for arg in remaining_args if "experiment_number" not in arg]
