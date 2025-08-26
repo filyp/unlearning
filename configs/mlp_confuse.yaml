@@ -67,7 +67,6 @@ cb_retaining_pow: 1.0
 mlp_retaining_pow: 1.0
 mlp_floor: 0
 
-experiment_number: 0
 experiment_list:
 
     - loss_fn_name: circuit_breaker

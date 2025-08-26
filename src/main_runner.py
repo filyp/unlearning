@@ -50,18 +50,26 @@ logging.basicConfig(level=logging.INFO)
 
 # Parse just the config-name, let Hydra handle the rest
 parser = argparse.ArgumentParser()
-parser.add_argument("--config-name", default="cir")
+parser.add_argument("--config-name")
+parser.add_argument("--exp-num", type=int)
 args, remaining_args = parser.parse_known_args()
 
 if get_ipython() is None:
     with hydra.initialize(config_path="../configs", version_base="1.2"):
-        cfg = hydra.compose(config_name=args.config_name, overrides=remaining_args)
+        # Load base config without overrides first
+        base_cfg = hydra.compose(config_name=args.config_name)
+        cfg = OmegaConf.merge(
+            base_cfg, 
+            base_cfg.experiment_list[args.exp_num],
+            OmegaConf.from_dotlist(remaining_args)
+        )
 else:
     logging.info("Running in Jupyter")
     cfg = OmegaConf.load("../configs/mlp_confuse.yaml")  # for debugging
     cfg.model_id = "meta-llama/Llama-3.2-1B"  # locally we can use only 1B
-with open_dict(cfg):
-    cfg = OmegaConf.merge(cfg, cfg.experiment_list[cfg.experiment_number])
+    with open_dict(cfg):
+        cfg = OmegaConf.merge(cfg, cfg.experiment_list[0])
+
 
 # ! setup
 set_seeds(42)
