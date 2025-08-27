@@ -52,6 +52,7 @@ logging.basicConfig(level=logging.INFO)
 parser = argparse.ArgumentParser()
 parser.add_argument("--config-name")
 parser.add_argument("--exp-num", type=int)
+parser.add_argument("--group-name", type=str, default=None)
 args, remaining_args = parser.parse_known_args()
 
 if get_ipython() is not None:
@@ -350,8 +351,7 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
 # experiment number -> name
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-group = args.config_name + "_" + get_conf_hash(args.config_name)
-# group = args.config_name + f"_{is_dev}26.08.2025"  # todo change back
+group = args.group_name if args.group_name is not None else f"{args.config_name}_{get_conf_hash(args.config_name)}"
 _args = "_".join(str(v) for v in cfg.experiment_list[args.exp_num].values())
 run_name = f"{args.exp_num}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
