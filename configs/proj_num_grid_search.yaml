@@ -24,10 +24,10 @@ dataset: wmdp_cyber_simple
 num_examples_per_question: 3
 use_dev_split: false
 
-max_num_epochs: 500
+max_num_epochs: 1000
 
 retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
-retraining_epochs: 50
+retraining_epochs: 15
 eval_on_all_questions: false
 
 # default experiment config

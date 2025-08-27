@@ -350,8 +350,8 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
 # experiment number -> name
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-# group = args.config_name + "_" + get_conf_hash(args.config_name)
-group = args.config_name + f"_{is_dev}26.08.2025"  # todo change back
+group = args.config_name + "_" + get_conf_hash(args.config_name)
+# group = args.config_name + f"_{is_dev}26.08.2025"  # todo change back
 _args = "_".join(str(v) for v in cfg.experiment_list[args.exp_num].values())
 run_name = f"{args.exp_num}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
