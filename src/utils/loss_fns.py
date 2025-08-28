@@ -91,7 +91,7 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
     _mask[:, :cfg.cut_off_tokens] = False
 
     loss_acc = 0
-    for layer_id in cfg.cb_layers:
+    for layer_id in range(*cfg.layer_range):
         acts = output.hidden_states[layer_id][_mask].float()
         # here, the org_acts were already masked out
         org_acts = batch["act_for_cb"][layer_id].to(acts.device).float()
@@ -113,7 +113,7 @@ def circuit_breaker(output, batch, cfg, answer_mask=None):
             cossim = dotproducts / org_acts.norm(dim=-1, keepdim=True) / acts.norm(dim=-1, keepdim=True)
             loss_acc += cossim.clip(min=0).mean()
 
-    return loss_acc / len(cfg.cb_layers)
+    return loss_acc / len(range(*cfg.layer_range))
 
 
 def cb_retain(output, batch, cfg, answer_mask=None):
@@ -122,7 +122,7 @@ def cb_retain(output, batch, cfg, answer_mask=None):
     # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
     
     loss_acc = 0
-    for layer_id in cfg.cb_layers:
+    for layer_id in cfg.cb_retaining_layers:
         acts = output.hidden_states[layer_id][_mask].float()
         org_acts = batch["retain_acts"][layer_id].to(acts.device)[_mask].float()
         assert acts.shape == org_acts.shape
@@ -133,7 +133,7 @@ def cb_retain(output, batch, cfg, answer_mask=None):
 
         loss_acc += dist ** cfg.cb_retaining_pow
 
-    return loss_acc / len(cfg.cb_layers)
+    return loss_acc / len(cfg.cb_retaining_layers)
 
 
 def mlp_confuse(model, batch, cfg, answer_mask=None):
@@ -142,7 +142,7 @@ def mlp_confuse(model, batch, cfg, answer_mask=None):
     _mask[:, :cfg.cut_off_tokens] = False
 
     loss_acc = 0
-    for layer_id in range(*cfg.mlp_range):
+    for layer_id in range(*cfg.layer_range):
         out = model.model.layers[layer_id].mlp.cached_out
         out = out[_mask].float()
         org_out = batch["org_mlp_out"][layer_id].to(out.device).float()
@@ -156,28 +156,28 @@ def mlp_confuse(model, batch, cfg, answer_mask=None):
         loss_acc += dotproducts.clip(min=cfg.mlp_floor).mean()
         # used to also do max=1, but that's catastrophic - stops unlearning but not disruption
 
-    return loss_acc / len(range(*cfg.mlp_range))
+    return loss_acc / len(range(*cfg.layer_range))
 
 
-def mlp_confuse_retain(model, batch, cfg, answer_mask=None):
-    _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
-    _mask = _mask.bool().clone()
-    # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
+# def mlp_confuse_retain(model, batch, cfg, answer_mask=None):
+#     _mask = answer_mask if answer_mask is not None else batch["attention_mask"]
+#     _mask = _mask.bool().clone()
+#     # _mask[:, :cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
 
-    loss_acc = 0
-    for layer_id in range(*cfg.mlp_retain_range):
-        out = model.model.layers[layer_id].mlp.cached_out
-        out = out[_mask].float()
-        org_out = batch["org_mlp_out_retain"][layer_id].to(out.device).float()
-        assert out.shape == org_out.shape
-        assert len(out.shape) == 2
+#     loss_acc = 0
+#     for layer_id in range(*cfg.mlp_retain_range):
+#         out = model.model.layers[layer_id].mlp.cached_out
+#         out = out[_mask].float()
+#         org_out = batch["org_mlp_out_retain"][layer_id].to(out.device).float()
+#         assert out.shape == org_out.shape
+#         assert len(out.shape) == 2
 
-        org_norm = batch["org_mlp_out_retain_norm"][layer_id].to(out.device)
+#         org_norm = batch["org_mlp_out_retain_norm"][layer_id].to(out.device)
 
-        dist = (out - org_out).norm(dim=-1).mean() / org_norm
-        loss_acc += dist ** cfg.mlp_retaining_pow
+#         dist = (out - org_out).norm(dim=-1).mean() / org_norm
+#         loss_acc += dist ** cfg.mlp_retaining_pow
 
-    return loss_acc / len(range(*cfg.mlp_range))
+#     return loss_acc / len(range(*cfg.mlp_retain_range))
 
 
 

@@ -208,8 +208,9 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.config.use_cache = False
 all_layers = model.model.layers  # for trimmed model
+
 if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
-    max_layer = max(cfg.get("cb_layers", []) + cfg.get("mlp_range", []))
+    max_layer = max(cfg.layer_range)
     model.model.layers = model.model.layers[: max_layer + 1]
 
 
@@ -226,7 +227,7 @@ if cfg.get("retain_to_original", False) or cfg.get("decay_to_orig", False):
         n: m.weight.clone().detach().to(device_storage)
         # n: m.weight.clone().detach().to(pt.float8_e4m3fn).to(device_storage)
         for n, m in trainable_modules(model)
-        if int(n.split(".")[2]) <= max(cfg.cb_layers)
+        if int(n.split(".")[2]) <= max(cfg.layer_range)
     }
 
 install_hooks(model)
@@ -247,7 +248,7 @@ if (cfg.get("retaining_rate", 0) > 0) and ("cb_retain" in cfg.retaining_loss_fns
             output = model(**batch, output_hidden_states=True)
         batch["retain_acts"] = {
             l_num: output.hidden_states[l_num].detach().to("cpu")
-            for l_num in cfg.cb_layers
+            for l_num in cfg.cb_retaining_layers
         }
 
 if cfg.loss_fn_name == "circuit_breaker":
@@ -260,7 +261,7 @@ if cfg.loss_fn_name == "circuit_breaker":
         _mask[:, : cfg.cut_off_tokens] = False
         batch["act_for_cb"] = {}
         batch["avg_act_norm"] = {}
-        for layer_id in cfg.cb_layers:
+        for layer_id in range(*cfg.layer_range):
             full_act = output.hidden_states[layer_id].detach()
             _act = full_act[_mask]
             batch["act_for_cb"][layer_id] = _act.cpu()
@@ -296,18 +297,11 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
         # return [pt.zeros_like(grad_input[0])] + list(grad_input[1:])
         return [None] + list(grad_input[1:])
 
-    for layer_id in range(*cfg.mlp_range):
+    for layer_id in range(*cfg.layer_range):
         model.model.layers[layer_id].mlp.register_forward_hook(save_acts_hook)
         # if cfg.mlp_stop_grad:
         #     model.model.layers[layer_id].mlp.gate_proj.register_full_backward_hook(stop_grad_hook)
         #     model.model.layers[layer_id].mlp.up_proj.register_full_backward_hook(stop_grad_hook)
-    # if cfg.mlp_stop_grad:
-        # for layer_id in range(len(model.model.layers)):
-        #     if layer_id < cfg.mlp_range[0] or layer_id >= cfg.mlp_range[1]:
-        #         model.model.layers[layer_id].mlp.gate_proj.weight.requires_grad = False
-        #         model.model.layers[layer_id].mlp.up_proj.weight.requires_grad = False
-        #         model.model.layers[layer_id].mlp.down_proj.weight.requires_grad = False
-
 
     # * cache the activations for MLP confusion
     for batch in training_batches:
@@ -319,8 +313,7 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
         batch["org_mlp_out"] = {}
         batch["org_mlp_out_norm"] = {}
         batch["org_mlp_in"] = {}
-        for layer_id in range(*cfg.mlp_range):
-        # for layer_id in range(min(cfg.mlp_range[0], cfg.mlp_retain_range[0]), max(cfg.mlp_range[1], cfg.mlp_retain_range[1])):
+        for layer_id in range(*cfg.layer_range):
             mlp = model.model.layers[layer_id].mlp
             out = mlp.cached_out.detach()[_mask]
             batch["org_mlp_out"][layer_id] = out.cpu()
@@ -365,7 +358,7 @@ wandb.init(
 model.model.layers = all_layers  # for trimmed model
 init_res = get_metrics(model)
 if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
-    max_layer = max(cfg.get("cb_layers", []) + cfg.get("mlp_range", []))
+    max_layer = max(cfg.layer_range)
     model.model.layers = model.model.layers[: max_layer + 1]
 
 wandb.log(init_res)
@@ -432,9 +425,7 @@ for epoch in range(cfg.max_num_epochs):
         if b_num == 0:
             stats = dict(
                 update_norm=get_update_norm(model),
-                # act_norm=output.hidden_states[5].norm(dim=-1).mean(),
-                # min_act_norm = output.hidden_states[min(cfg.cb_layers)].norm(dim=-1).mean(),
-                # max_act_norm = output.hidden_states[max(cfg.cb_layers)].norm(dim=-1).mean(),
+                act_norm=output.hidden_states[4].norm(dim=-1).mean(),
             )
 
         # # * clip grad norm
@@ -516,7 +507,7 @@ for epoch in range(cfg.max_num_epochs):
     model.model.layers = all_layers  # for trimmed model
     res = get_metrics(model)
     if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
-        max_layer = max(cfg.get("cb_layers", []) + cfg.get("mlp_range", []))
+        max_layer = max(cfg.layer_range)
         model.model.layers = model.model.layers[: max_layer + 1]
 
     wandb.log(res | stats)

@@ -1,8 +1,3 @@
-# searches over:
-# a_proj_nums=(0 1 6 12 24)
-# g_proj_nums=(0 1 6 12 24)
-# if both are >=6 then use max_norm=0.05, otherwise 0.01
-
 # general, unlikely to change
 tokenizer:
     max_length: 128
@@ -38,7 +33,6 @@ eval_on_all_questions: false
 # default experiment config
 algorithm: CIR
 loss_budget: 1.005
-# loss_budget: 1.002  # ! this changed relative to proj_num_grid_search.yaml
 cir_niter: 16
 comment: null
 mask_n_most_common_tokens: null
@@ -47,120 +41,76 @@ mask_n_most_common_tokens: null
 #
 cut_off_tokens: 1
 loss_fn_name: mlp_confuse
-mlp_range: [6, 12]  # ! this changed relative to proj_num_grid_search.yaml
+layer_range: null
 mlp_floor: 0.0
 
-act_proj_num: ???
-grad_proj_num: ???
-max_norm: 0.02
+max_norm: 0.05
+act_proj_num: 24
+grad_proj_num: 36
 
-# cb_type: dot
-# cb_floor: 0.0
-# cb_pow: 1.0
+cb_layers: null
+layer_range: null
+cb_type: dot
+cb_floor: 0.0
+cb_pow: 1.0
 # mlp_retaining_pow: 1.0
+# cb_retaining_layers: null
 
 experiment_list:
 
-    - act_proj_num: 0
-      grad_proj_num: 0
-      max_norm: 0.01
+    - layer_range: [0, 6]
+      loss_fn_name: circuit_breaker
     
-    - act_proj_num: 0
-      grad_proj_num: 1
-      max_norm: 0.01
-    
-    - act_proj_num: 0
-      grad_proj_num: 6
-      max_norm: 0.01
-    
-    - act_proj_num: 0
-      grad_proj_num: 12
-      max_norm: 0.01
-    
-    - act_proj_num: 0
-      grad_proj_num: 24
-      max_norm: 0.01
-    
+    - layer_range: [6, 12]
+      loss_fn_name: circuit_breaker
 
-    - act_proj_num: 1
-      grad_proj_num: 0
-      max_norm: 0.01
-    
-    - act_proj_num: 1
-      grad_proj_num: 1
-      max_norm: 0.01
-    
-    - act_proj_num: 1
-      grad_proj_num: 6
-      max_norm: 0.01
-    
-    - act_proj_num: 1
-      grad_proj_num: 12
-      max_norm: 0.01
-    
-    - act_proj_num: 1
-      grad_proj_num: 24
-      max_norm: 0.01
-    
+    - layer_range: [12, 18]
+      loss_fn_name: circuit_breaker
 
-    - act_proj_num: 6
-      grad_proj_num: 0
-      max_norm: 0.01
-    
-    - act_proj_num: 6
-      grad_proj_num: 1
-      max_norm: 0.01
-    
-    - act_proj_num: 6
-      grad_proj_num: 6
-      max_norm: 0.05
-    
-    - act_proj_num: 6
-      grad_proj_num: 12
-      max_norm: 0.05
-    
-    - act_proj_num: 6
-      grad_proj_num: 24
-      max_norm: 0.05
-    
+    - layer_range: [18, 24]
+      loss_fn_name: circuit_breaker
 
-    - act_proj_num: 12
-      grad_proj_num: 0
-      max_norm: 0.01
-    
-    - act_proj_num: 12
-      grad_proj_num: 1
-      max_norm: 0.01
-    
-    - act_proj_num: 12
-      grad_proj_num: 6
-      max_norm: 0.05
-    
-    - act_proj_num: 12
-      grad_proj_num: 12
-      max_norm: 0.05
-    
-    - act_proj_num: 12
-      grad_proj_num: 24
-      max_norm: 0.05
-    
+    - layer_range: [24, 30]
+      loss_fn_name: circuit_breaker
 
-    - act_proj_num: 24
-      grad_proj_num: 0
+
+    - layer_range: [0, 6]
+      loss_fn_name: mlp_confuse
+    
+    - layer_range: [6, 12]
+      loss_fn_name: mlp_confuse
+
+    - layer_range: [12, 18]
+      loss_fn_name: mlp_confuse
+
+    - layer_range: [18, 24]
+      loss_fn_name: mlp_confuse
+
+    - layer_range: [24, 30]
+      loss_fn_name: mlp_confuse
+
+
+    - layer_range: [0, 6]
+      loss_fn_name: circuit_breaker
+      algorithm: GA
       max_norm: 0.01
     
-    - act_proj_num: 24
-      grad_proj_num: 1
+    - layer_range: [6, 12]
+      loss_fn_name: circuit_breaker
+      algorithm: GA
       max_norm: 0.01
-    
-    - act_proj_num: 24
-      grad_proj_num: 6
-      max_norm: 0.05
-    
-    - act_proj_num: 24
-      grad_proj_num: 12
-      max_norm: 0.05
-    
-    - act_proj_num: 24
-      grad_proj_num: 24
-      max_norm: 0.05
+
+    - layer_range: [12, 18]
+      loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.01
+
+    - layer_range: [18, 24]
+      loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.01
+
+    - layer_range: [24, 30]
+      loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.01

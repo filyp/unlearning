@@ -1,6 +1,6 @@
 # searches over:
-# a_proj_nums=(0 1 6 12 24)
-# g_proj_nums=(0 1 6 12 24)
+# a_proj_nums=(0 1 6 12 24 36 48)
+# g_proj_nums=(0 1 6 12 24 36 48)
 # if both are >=6 then use max_norm=0.05, otherwise 0.01
 
 # general, unlikely to change
@@ -214,5 +214,43 @@ experiment_list:
     
     - act_proj_num: 36
       grad_proj_num: 6
+      max_norm: 0.05
+    
+    # 36
+    - act_proj_num: 36
+      grad_proj_num: 0
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 1
+      max_norm: 0.05
+    
+
+    - act_proj_num: 48
+      grad_proj_num: 0
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 1
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 6
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 12
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 24
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 36
+      max_norm: 0.05
+    
+    - act_proj_num: 48
+      grad_proj_num: 48
       max_norm: 0.05
     
