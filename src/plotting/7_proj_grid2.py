@@ -38,7 +38,7 @@ def extract_run_data(
 
 # %%
 
-group = "proj_num_grid_search_b73dc7"
+group = "proj_num_grid_search2_4242f6"
 api = wandb.Api(timeout=3600)
 
 # project_name = "unlearning|src|main_runner.py"
@@ -57,22 +57,10 @@ name_to_run = {run.name: run for run in ret_runs}
 # Extract data for all runs
 ret_data = extract_run_data(list(name_to_run.keys()))
 
-# remove divergent runs
-del ret_data["0||act_proj_num=0_grad_proj_num=0"]
-del ret_data["0||act_proj_num=1_grad_proj_num=0"]
-# they needed a smaller LR, so were rerun manually with:
-# sbatch ~/unlearning/example_job.sh "python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=0 grad_proj_num=0 max_norm=0.005"
-# sbatch ~/unlearning/example_job.sh "python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=1 grad_proj_num=0 max_norm=0.005"
-
-# also remove the fast ones, because they seem to be starkly different!
-for k in list(ret_data.keys()):
-    if "max_norm=0.05" in k:
-        del ret_data[k]
-
 # %%
 # Prepare data for 2D grid plot
-act_proj_values = [0, 1, 3, 6, 9, 12, 15, 20, 25, 30]
-grad_proj_values = [0, 1, 2, 3, 4, 6, 9, 12, 15, 18, 21]
+act_proj_values = [0, 1, 6, 12, 24, 36, 48]
+grad_proj_values = [0, 1, 6, 12, 24, 36, 48]
 grid_data = np.full((len(grad_proj_values), len(act_proj_values)), np.nan)
 grid_text = np.full((len(grad_proj_values), len(act_proj_values)), "", dtype=object)
 
@@ -81,9 +69,9 @@ for run_name, v in ret_data.items():
     last_acc = v[-1]["forget_acc_t1"]
     # last_acc = v[0]["forget_acc_t1"]
     # last_acc = v[0]["retain_loss"]
-    # from strings like 0||act_proj_num=3_grad_proj_num=12 extract proj_nums
-    act_proj_nums = int(re.findall(r"act_proj_num=(\d+)", run_name)[0])
-    grad_proj_nums = int(re.findall(r"grad_proj_num=(\d+)", run_name)[0])
+    args = run_name.split("|")[1].split("_")
+    act_proj_nums = int(args[0])
+    grad_proj_nums = int(args[1])
 
     # Find indices in the grid
     try:
