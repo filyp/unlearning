@@ -164,4 +164,3 @@ experiment_list:
     - act_proj_num: 24
       grad_proj_num: 24
       max_norm: 0.05
-    

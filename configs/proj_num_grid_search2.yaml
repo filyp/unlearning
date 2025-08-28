@@ -128,9 +128,10 @@ experiment_list:
       grad_proj_num: 0
       max_norm: 0.01
     
+    # 16
     - act_proj_num: 12
       grad_proj_num: 1
-      max_norm: 0.01
+      max_norm: 0.05
     
     - act_proj_num: 12
       grad_proj_num: 6
@@ -149,9 +150,10 @@ experiment_list:
       grad_proj_num: 0
       max_norm: 0.01
     
+    # 21
     - act_proj_num: 24
       grad_proj_num: 1
-      max_norm: 0.01
+      max_norm: 0.05
     
     - act_proj_num: 24
       grad_proj_num: 6
@@ -163,5 +165,54 @@ experiment_list:
     
     - act_proj_num: 24
       grad_proj_num: 24
+      max_norm: 0.05
+    
+
+
+    # 25
+    - act_proj_num: 12
+      grad_proj_num: 36
+      max_norm: 0.05
+    
+    - act_proj_num: 24
+      grad_proj_num: 36
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 36
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 24
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 12
+      max_norm: 0.05
+    
+
+    # 30
+    - act_proj_num: 6
+      grad_proj_num: 36
+      max_norm: 0.05
+    
+    - act_proj_num: 12
+      grad_proj_num: 48
+      max_norm: 0.05
+    
+    - act_proj_num: 24
+      grad_proj_num: 48
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 48
+      max_norm: 0.05
+    
+    - act_proj_num: 6
+      grad_proj_num: 48
+      max_norm: 0.05
+    
+    - act_proj_num: 36
+      grad_proj_num: 6
       max_norm: 0.05
     
