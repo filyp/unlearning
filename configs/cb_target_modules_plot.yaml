@@ -16,7 +16,6 @@ target_modules:
 # model_id: meta-llama/Llama-3.2-3B
 # model_id: meta-llama/Llama-3.2-1B
 model_id: meta-llama/Llama-3.1-8B
-# todo try mistralai/Mistral-7B-Instruct-v0.2
 
 # dataset: wmdp_cyber_pairs
 # dataset: wmdp_cyber_pairs_only_ans

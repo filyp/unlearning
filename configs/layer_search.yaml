@@ -1,0 +1,167 @@
+# searches over:
+# a_proj_nums=(0 1 6 12 24)
+# g_proj_nums=(0 1 6 12 24)
+# if both are >=6 then use max_norm=0.05, otherwise 0.01
+
+# general, unlikely to change
+tokenizer:
+    max_length: 128
+    padding: true
+    truncation: true
+    return_tensors: pt
+train_batch_size: 32  # can be higher because batches are usually shorter
+wikitext_batch_size: 16
+retain_batch_size: 16
+num_eval_batches: 8  # will make it slower, but for final plots make it bigger
+target_modules:
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.2-1B
+model_id: meta-llama/Llama-3.1-8B
+
+# dataset: wmdp_cyber_pairs
+# dataset: wmdp_cyber_pairs_only_ans
+# dataset: wmdp_cyber_deebs
+dataset: wmdp_cyber_simple
+num_examples_per_question: 3
+use_dev_split: false
+
+max_num_epochs: 1000
+
+retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
+retraining_epochs: 15
+eval_on_all_questions: false
+
+# default experiment config
+algorithm: CIR
+loss_budget: 1.005
+# loss_budget: 1.002  # ! this changed relative to proj_num_grid_search.yaml
+cir_niter: 16
+comment: null
+mask_n_most_common_tokens: null
+# mask_n_most_common_tokens: 50
+# eval_on_all_questions: true  # best to just use it when not retraining
+#
+cut_off_tokens: 1
+loss_fn_name: mlp_confuse
+mlp_range: [6, 12]  # ! this changed relative to proj_num_grid_search.yaml
+mlp_floor: 0.0
+
+act_proj_num: ???
+grad_proj_num: ???
+max_norm: 0.02
+
+# cb_type: dot
+# cb_floor: 0.0
+# cb_pow: 1.0
+# mlp_retaining_pow: 1.0
+
+experiment_list:
+
+    - act_proj_num: 0
+      grad_proj_num: 0
+      max_norm: 0.01
+    
+    - act_proj_num: 0
+      grad_proj_num: 1
+      max_norm: 0.01
+    
+    - act_proj_num: 0
+      grad_proj_num: 6
+      max_norm: 0.01
+    
+    - act_proj_num: 0
+      grad_proj_num: 12
+      max_norm: 0.01
+    
+    - act_proj_num: 0
+      grad_proj_num: 24
+      max_norm: 0.01
+    
+
+    - act_proj_num: 1
+      grad_proj_num: 0
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 1
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 6
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 12
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 24
+      max_norm: 0.01
+    
+
+    - act_proj_num: 6
+      grad_proj_num: 0
+      max_norm: 0.01
+    
+    - act_proj_num: 6
+      grad_proj_num: 1
+      max_norm: 0.01
+    
+    - act_proj_num: 6
+      grad_proj_num: 6
+      max_norm: 0.05
+    
+    - act_proj_num: 6
+      grad_proj_num: 12
+      max_norm: 0.05
+    
+    - act_proj_num: 6
+      grad_proj_num: 24
+      max_norm: 0.05
+    
+
+    - act_proj_num: 12
+      grad_proj_num: 0
+      max_norm: 0.01
+    
+    - act_proj_num: 12
+      grad_proj_num: 1
+      max_norm: 0.01
+    
+    - act_proj_num: 12
+      grad_proj_num: 6
+      max_norm: 0.05
+    
+    - act_proj_num: 12
+      grad_proj_num: 12
+      max_norm: 0.05
+    
+    - act_proj_num: 12
+      grad_proj_num: 24
+      max_norm: 0.05
+    
+
+    - act_proj_num: 24
+      grad_proj_num: 0
+      max_norm: 0.01
+    
+    - act_proj_num: 24
+      grad_proj_num: 1
+      max_norm: 0.01
+    
+    - act_proj_num: 24
+      grad_proj_num: 6
+      max_norm: 0.05
+    
+    - act_proj_num: 24
+      grad_proj_num: 12
+      max_norm: 0.05
+    
+    - act_proj_num: 24
+      grad_proj_num: 24
+      max_norm: 0.05
+    

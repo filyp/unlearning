@@ -1,3 +1,9 @@
+# did grid_search.sh with:
+# a_proj_nums=(0 1 3 6 9 12 15 20 25 30)
+# g_proj_nums=(0 1 2 3 4 6 9 12 15 18 21)
+#
+# original group name: proj_num_grid_search_b73dc7
+
 # general, unlikely to change
 tokenizer:
     max_length: 128
@@ -54,8 +60,8 @@ max_norm: 0.02
 # cb_pow: 1.0
 # mlp_retaining_pow: 1.0
 
-# retaining_loss_fns: [cb_retain]
-# retaining_rate: 1e-3
+# retaining_loss_fns: null
+# retaining_rate: 0
 # cb_layers: [5, 10, 15]
 # cb_retaining_pow: 1.0
 
@@ -63,3 +69,11 @@ experiment_list:
 
     # empty
     - {}
+    
+    # - act_proj_num: 25
+    #   grad_proj_num: 18
+    #   max_norm: 0.05
+    #   retaining_loss_fns: [cb_retain]
+    #   retaining_rate: 1e-3
+    #   cb_layers: [15]
+    #   cb_retaining_pow: 1.0

@@ -2,20 +2,11 @@
 
 # Grid search script for proj_num parameters
 # Values to iterate over
-a_proj_nums=(0 1 3 6 9 12 15 20 25 30)
-g_proj_nums=(0 1 2 3 4 6 9 12 15 18)
+# a_proj_nums=(0 1 3 6 9 12 15 20 25 30)
+# g_proj_nums=(0 1 2 3 4 6 9 12 15 18 21)
 
-# a_proj_nums=(30)
-# g_proj_nums=(9 12 15 18)
-
-# a_proj_nums=(15 20 25)
-# g_proj_nums=(18)
-
-# a_proj_nums=(30)
-# g_proj_nums=(0 1 2 3 4 6)
-
-# a_proj_nums=(0 1 3 6 9 12)
-# g_proj_nums=(18)
+a_proj_nums=(15 0 1 3 6 9 12)
+g_proj_nums=(21)
 
 # Base directory (adjust if needed)
 SCRIPT_DIR="$HOME/unlearning"
@@ -35,6 +26,7 @@ for act_proj in "${a_proj_nums[@]}"; do
         
         # Create command
         cmd="python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=${act_proj} grad_proj_num=${grad_proj}"
+        # cmd="python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=${act_proj} grad_proj_num=${grad_proj} max_norm=0.05"
         
         echo "Job ${job_count}: Submitting act_proj_num=${act_proj}, grad_proj_num=${grad_proj}"
         
