@@ -26,8 +26,8 @@ use_dev_split: false
 
 max_num_epochs: 200
 
-retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
-retraining_epochs: 50
+retraining_rate: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape
+retraining_epochs: 100
 eval_on_all_questions: false
 
 # default experiment config
@@ -204,3 +204,19 @@ experiment_list:
       max_norm: 0.0005
 
 
+
+    # bonus: no retain
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.1
+      retaining_rate: 0
+
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.002
+      retaining_rate: 0
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.002
+      retaining_rate: 0
