@@ -321,22 +321,22 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
             batch["org_mlp_in"][layer_id] = mlp.cached_in.detach().cpu()
 
 
-    # * cache the activations for mlp confuse retaining
-    retain_batches = retain_batches[: len(training_batches)]
-    if (cfg.get("retaining_rate", 0) > 0) and ("mlp_confuse_retain" in cfg.retaining_loss_fns):
-        for batch in retain_batches:
-            with pt.no_grad():
-                output = model(**batch, output_hidden_states=True)
-            _mask = batch.get("answer_mask", batch["attention_mask"])
-            _mask = _mask.bool().clone()
-            # _mask[:, : cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
-            batch["org_mlp_out_retain"] = {}
-            batch["org_mlp_out_retain_norm"] = {}
-            for layer_id in range(*cfg.mlp_retain_range):
-                mlp = model.model.layers[layer_id].mlp
-                out = mlp.cached_out.detach()[_mask]
-                batch["org_mlp_out_retain"][layer_id] = out.cpu()
-                batch["org_mlp_out_retain_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
+    # # * cache the activations for mlp confuse retaining
+    # retain_batches = retain_batches[: len(training_batches)]
+    # if (cfg.get("retaining_rate", 0) > 0) and ("mlp_confuse_retain" in cfg.retaining_loss_fns):
+    #     for batch in retain_batches:
+    #         with pt.no_grad():
+    #             output = model(**batch, output_hidden_states=True)
+    #         _mask = batch.get("answer_mask", batch["attention_mask"])
+    #         _mask = _mask.bool().clone()
+    #         # _mask[:, : cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
+    #         batch["org_mlp_out_retain"] = {}
+    #         batch["org_mlp_out_retain_norm"] = {}
+    #         for layer_id in range(*cfg.mlp_retain_range):
+    #             mlp = model.model.layers[layer_id].mlp
+    #             out = mlp.cached_out.detach()[_mask]
+    #             batch["org_mlp_out_retain"][layer_id] = out.cpu()
+    #             batch["org_mlp_out_retain_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
 
 # %%
 # script name -> project
@@ -466,8 +466,8 @@ for epoch in range(cfg.max_num_epochs):
                 loss += cross_entropy(output, batch)
             if "cb_retain" in cfg.retaining_loss_fns:
                 loss += loss_fns.cb_retain(output, batch, cfg)
-            if "mlp_confuse_retain" in cfg.retaining_loss_fns:
-                loss += loss_fns.mlp_confuse_retain(model, batch, cfg)
+            # if "mlp_confuse_retain" in cfg.retaining_loss_fns:
+                # loss += loss_fns.mlp_confuse_retain(model, batch, cfg)
 
             loss.backward()
 
