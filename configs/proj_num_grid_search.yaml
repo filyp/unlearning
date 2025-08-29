@@ -48,7 +48,7 @@ mask_n_most_common_tokens: null
 #
 cut_off_tokens: 1
 loss_fn_name: mlp_confuse
-mlp_range: [6, 15]
+layer_range: [6, 15]
 mlp_floor: 0.0
 
 act_proj_num: ???

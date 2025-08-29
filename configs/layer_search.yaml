@@ -49,7 +49,6 @@ act_proj_num: 24
 grad_proj_num: 36
 
 cb_layers: null
-layer_range: null
 cb_type: dot
 cb_floor: 0.0
 cb_pow: 1.0
@@ -93,24 +92,24 @@ experiment_list:
     - layer_range: [0, 6]
       loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.01
+      max_norm: 0.0003
     
     - layer_range: [6, 12]
       loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.01
+      max_norm: 0.0003
 
     - layer_range: [12, 18]
       loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.01
+      max_norm: 0.0003
 
     - layer_range: [18, 24]
       loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.01
+      max_norm: 0.0003
 
     - layer_range: [24, 30]
       loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.01
+      max_norm: 0.0003

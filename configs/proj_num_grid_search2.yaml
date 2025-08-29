@@ -47,7 +47,7 @@ mask_n_most_common_tokens: null
 #
 cut_off_tokens: 1
 loss_fn_name: mlp_confuse
-mlp_range: [6, 15]
+layer_range: [6, 15]
 mlp_floor: 0.0
 
 act_proj_num: ???
@@ -253,4 +253,22 @@ experiment_list:
     - act_proj_num: 48
       grad_proj_num: 48
       max_norm: 0.05
+    
+
+    # 45
+    - act_proj_num: 0
+      grad_proj_num: 36
+      max_norm: 0.01
+    
+    - act_proj_num: 0
+      grad_proj_num: 48
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 36
+      max_norm: 0.01
+    
+    - act_proj_num: 1
+      grad_proj_num: 48
+      max_norm: 0.01
     
