@@ -36,6 +36,7 @@ def extract_run_data(
 
 
 # %%
+# ! optionally skip this, and instead load the data (last cell) and then directly produce the plot (second to last cell)
 # for rerunning with exact reproducibility, you may want to limit date to 25.08.2025
 
 project_name = "unlearning|src|main_runner.py"
@@ -179,7 +180,8 @@ plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.size"] = 10
 
 # Combined plot with arrows showing transition from first to last retention accuracy (horizontal)
-plt.figure(figsize=(5.5, 4))
+scale = 0.82
+plt.figure(figsize=(5.5 * scale, 4 * scale))
 
 # Add arrows from first to last retention accuracy (flipped axes)
 for i in range(len(breaking_points)):
@@ -202,7 +204,7 @@ plt.gca().set_aspect("equal")
 
 # Add labels and title (flipped)
 plt.xlabel("WMDP Accuracy During Fine-Tuning Attack")
-plt.ylabel("WMDP Accuracy at 0.1% Disruption Threshold")
+plt.ylabel("WMDP Accuracy at\n0.1% Disruption Threshold")
 # plt.title('Retention Recovery: First to Last Accuracy Transition')
 plt.legend()
 # plt.grid(True, alpha=0.3)
