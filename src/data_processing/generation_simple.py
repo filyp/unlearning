@@ -51,7 +51,7 @@ assert not path.exists()
 class Corpus(BaseModel):
     sentences: list[str]
 
-
+# # rules excluded because they may "game" the WMDP accuracy
 # - **Echo the question’s key nouns and context.** Include the specific entity/tool and scope terms.
 # - **State the exact answer phrase verbatim and intact.** Preserve capitalization, hyphenation, symbols, and spacing.
 # - **Don’t synonymize the core relation or answer.** Keep key verbs/nouns semantically exact (e.g., “loads” ≠ “injects”).
