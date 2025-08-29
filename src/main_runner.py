@@ -212,6 +212,8 @@ all_layers = model.model.layers  # for trimmed model
 if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
     max_layer = max(cfg.layer_range)
     model.model.layers = model.model.layers[: max_layer + 1]
+    if cfg.get("cb_retaining_layers"):
+        assert max(cfg.cb_retaining_layers) <= max_layer
 
 
 # * set trainable params

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cir
-#SBATCH --time=01:30:00
+#SBATCH --time=02:30:00
 #SBATCH --account=plgunlearningai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
 #SBATCH --gres=gpu:1

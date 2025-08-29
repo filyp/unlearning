@@ -7,7 +7,7 @@ tokenizer:
 train_batch_size: 32  # can be higher because batches are usually shorter
 wikitext_batch_size: 16
 retain_batch_size: 16
-num_eval_batches: 8  # todo in the end change to 16
+num_eval_batches: 16
 target_modules:
   - gate_proj
   - up_proj
@@ -24,10 +24,10 @@ dataset: wmdp_cyber_simple
 num_examples_per_question: 3
 use_dev_split: false
 
-max_num_epochs: 1000
+max_num_epochs: 200
 
 retraining_rate: 3e-5  # even with 1e-6, wikitext_loss has this Nike shape
-retraining_epochs: 15  # todo in the end change to 50
+retraining_epochs: 50
 eval_on_all_questions: false
 
 # default experiment config
@@ -41,7 +41,6 @@ mask_n_most_common_tokens: null
 #
 cut_off_tokens: 1
 loss_fn_name: ???
-layer_range: null
 mlp_floor: 0.0
 
 max_norm: ???
@@ -49,96 +48,159 @@ act_proj_num: 24
 grad_proj_num: 36
 layer_range: [6, 12]
 
-cb_type: dot
+# cb_type: dot
+cb_type: cossim
 cb_floor: 0.0
 cb_pow: 1.0
 # mlp_retaining_pow: 1.0
 
-retaining_rate: 1e-3
+# this is used both for CIR and for CB
+retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
 retaining_loss_fns: [cb_retain]
 cb_retaining_layers: [12]
+cb_retaining_pow: 1.0
 
+# let's search 3 OOMs, using 9 runs, and a constant low retaining rate
+#
+# for GA:
+# retaining_rate: 1e-5  # 3e-5 is fine too, but let's be safe
 
 experiment_list:
     
     - loss_fn_name: mlp_confuse
-      max_norm: 0.005
+      max_norm: 0.02
 
     - loss_fn_name: mlp_confuse
-      max_norm: 0.005
-      retaining_rate: 3e-4
+      max_norm: 0.05
 
     - loss_fn_name: mlp_confuse
-      max_norm: 0.002
+      max_norm: 0.1
 
     - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.5
+
+
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.01
       max_norm: 0.001
 
-    - loss_fn_name: mlp_confuse
-      max_norm: 0.010
-
-
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.01
+      max_norm: 0.002
 
     - loss_fn_name: circuit_breaker
       algorithm: GA
+      loss_budget: 1.01
       max_norm: 0.005
 
     - loss_fn_name: circuit_breaker
       algorithm: GA
-      max_norm: 0.005
       loss_budget: 1.01
+      max_norm: 0.01
 
-
-
-    - loss_fn_name: neg_cross_entropy
+    - loss_fn_name: circuit_breaker
       algorithm: GA
-      retaining_rate: 3e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0003
       loss_budget: 1.01
+      max_norm: 0.02
+
+
+
 
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
       retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0003
       loss_budget: 1.01
+      max_norm: 0.00002
 
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
-      retaining_rate: 0
+      retaining_rate: 1e-5
       retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0003
       loss_budget: 1.01
+      max_norm: 0.00005
 
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
-      retaining_rate: 1e-4
+      retaining_rate: 1e-5
       retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0003
       loss_budget: 1.01
+      max_norm: 0.0001
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.01
+      max_norm: 0.0002
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.01
+      max_norm: 0.0005
 
 
 
 
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.001
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.002
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.005
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.01
+
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      max_norm: 0.02
 
 
 
 
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      max_norm: 0.00002
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      max_norm: 0.00005
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      max_norm: 0.0001
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      max_norm: 0.0002
+
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      max_norm: 0.0005
 
 
-
-
-
-
-
-
-
-
-
-
-
-    # - layer_range: [18, 24]
-    #   loss_fn_name: circuit_breaker
-    #   algorithm: GA
-    #   max_norm: 0.0003
