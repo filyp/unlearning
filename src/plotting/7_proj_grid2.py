@@ -95,8 +95,8 @@ plt.figure(figsize=(2.75, 2.75))
 # Using RdYlGn_r (reversed Red-Yellow-Green) so green represents lower values
 mask = np.isnan(grid_data)
 valid_data = grid_data[~mask]
-vmin, vmax = np.min(valid_data), np.max(valid_data)
-im = plt.imshow(grid_data, cmap="RdYlGn_r", aspect="equal", vmin=vmin, vmax=vmax)
+# vmin, vmax = np.min(valid_data), np.max(valid_data)
+im = plt.imshow(grid_data, cmap="RdYlGn_r", aspect="equal", vmin=37, vmax=57.5)
 
 # Add text annotations
 for i in range(len(grad_proj_values)):
@@ -126,14 +126,18 @@ ax.xaxis.set_ticks_position('top')
 ax.xaxis.set_label_position('top')
 
 # Add colorbar
-cbar = plt.colorbar(im, shrink=0.8)
+cbar = plt.colorbar(im, shrink=1)
 cbar.set_label("WMDP-Cyber Accuracy (%)", rotation=270, labelpad=15)
 
+# # Add label in top left corner
+# txt = "(b) 0.5% allowed disruption\n      CIR+CB on layers 6-15"
+# plt.text(-0.2, 1.3, txt, transform=ax.transAxes, fontsize=10)
 
 plt.tight_layout()
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}.pdf"
-plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+# bbox_inches=None is needed to actually produce 5.5 inch width
+plt.savefig(plot_path, bbox_inches=None, dpi=300)
 plt.show()
 
 # %%

@@ -38,7 +38,7 @@ def extract_run_data(
 
 # %%
 
-group = "proj_num_grid_search_b73dc7"
+group = "layer_search_66b9a6"
 api = wandb.Api(timeout=3600)
 
 # project_name = "unlearning|src|main_runner.py"
@@ -57,60 +57,60 @@ name_to_run = {run.name: run for run in ret_runs}
 # Extract data for all runs
 ret_data = extract_run_data(list(name_to_run.keys()))
 
-# remove divergent runs
-del ret_data["0||act_proj_num=0_grad_proj_num=0"]
-del ret_data["0||act_proj_num=1_grad_proj_num=0"]
-# they needed a smaller LR, so were rerun manually with:
-# sbatch ~/unlearning/example_job.sh "python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=0 grad_proj_num=0 max_norm=0.005"
-# sbatch ~/unlearning/example_job.sh "python src/main_runner.py --config-name=proj_num_grid_search --exp-num=0 --group-name=proj_num_grid_search_b73dc7 act_proj_num=1 grad_proj_num=0 max_norm=0.005"
-
-# also remove the fast ones, because they seem to be starkly different!
-for k in list(ret_data.keys()):
-    if "max_norm=0.05" in k:
-        del ret_data[k]
+print(ret_data.keys())
 
 # %%
 # Prepare data for 2D grid plot
-act_proj_values = [0, 1, 3, 6, 9, 12, 15, 20, 25, 30]
-grad_proj_values = [0, 1, 2, 3, 4, 6, 9, 12, 15, 18, 21]
-grid_data = np.full((len(grad_proj_values), len(act_proj_values)), np.nan)
-grid_text = np.full((len(grad_proj_values), len(act_proj_values)), "", dtype=object)
+layer_ranges = ["[0, 6]", "[6, 12]", "[12, 18]", "[18, 24]", "[24, 30]"]
+methods = ["circuit_breaker_GA", "circuit_breaker|", "mlp_confuse"]
+grid_data = np.full((len(methods), len(layer_ranges)), np.nan)
+grid_text = np.full((len(methods), len(layer_ranges)), "", dtype=object)
+
+method_to_row = {
+    "circuit_breaker_GA": 0,
+    "circuit_breaker|": 1, 
+    "mlp_confuse": 2
+}
 
 for run_name, v in ret_data.items():
-    # for run_name, v in data.items():
     last_acc = v[-1]["forget_acc_t1"]
-    # last_acc = v[0]["forget_acc_t1"]
-    # last_acc = v[0]["retain_loss"]
-    # from strings like 0||act_proj_num=3_grad_proj_num=12 extract proj_nums
-    act_proj_nums = int(re.findall(r"act_proj_num=(\d+)", run_name)[0])
-    grad_proj_nums = int(re.findall(r"grad_proj_num=(\d+)", run_name)[0])
+    
+    # Parse run name to get layer range and method
+    parts = run_name.split("|")
+    layer_range = parts[1].split("_")[0]
+    if "circuit_breaker_GA" in parts[1]:
+        method = "circuit_breaker_GA"
+    elif "circuit_breaker" in parts[1]:
+        method = "circuit_breaker|"
+    elif "mlp_confuse" in parts[1]:
+        method = "mlp_confuse"
+    else:
+        continue
 
     # Find indices in the grid
     try:
-        act_idx = act_proj_values.index(act_proj_nums)
-        grad_idx = grad_proj_values.index(grad_proj_nums)
+        col_idx = layer_ranges.index(layer_range)
+        row_idx = method_to_row[method]
 
         # Store the accuracy value (as percentage)
-        grid_data[grad_idx, act_idx] = last_acc * 100  # Convert to percentage
-        # grid_text[grad_idx, act_idx] = f"{last_acc * 100:.1f}"
-        grid_text[grad_idx, act_idx] = f"{last_acc * 100:.0f}"
+        grid_data[row_idx, col_idx] = last_acc * 100  # Convert to percentage
+        grid_text[row_idx, col_idx] = f"{last_acc * 100:.1f}"
     except ValueError:
-        print(
-            f"Warning: proj_num values {act_proj_nums}, {grad_proj_nums} not in expected range"
-        )
+        print(f"Warning: values {layer_range}, {method} not in expected range")
 
 # Create the plot
-# plt.figure(figsize=(5.5, 5))
-plt.figure(figsize=(2.75, 2.75))
+plt.figure(figsize=(5.5, 1.3))
 
 # Create a custom colormap where green is lower values (better)
-# Using RdYlGn_r (reversed Red-Yellow-Green) so green represents lower values
 mask = np.isnan(grid_data)
-im = plt.imshow(grid_data, cmap="RdYlGn_r", aspect="equal", vmin=37, vmax=57.5)
+valid_data = grid_data[~mask]
+# vmin, vmax = np.min(valid_data), np.max(valid_data)
+# Changed aspect to 2.0 to make cells wider
+im = plt.imshow(grid_data, cmap="RdYlGn_r", aspect=0.4, vmin=37, vmax=57.5)
 
 # Add text annotations
-for i in range(len(grad_proj_values)):
-    for j in range(len(act_proj_values)):
+for i in range(len(methods)):
+    for j in range(len(layer_ranges)):
         if not mask[i, j]:
             plt.text(
                 j,
@@ -119,26 +119,23 @@ for i in range(len(grad_proj_values)):
                 ha="center",
                 va="center",
                 color="black",
-                # fontweight="bold",
                 fontsize=10,
             )
 
 # Set ticks and labels
-plt.xticks(range(len(act_proj_values)), act_proj_values)
-plt.yticks(range(len(grad_proj_values)), grad_proj_values)
-plt.xlabel("Act Proj Num")
-plt.ylabel("Grad Proj Num")
-# plt.title("")
+plt.xticks(range(len(layer_ranges)), layer_ranges)
+plt.yticks(range(len(methods)), ["circuit breaking", "CIR + circuit breaking", "CIR + MLP breaking"])
+plt.xlabel("Layer Range")
+plt.ylabel("Method")
 
 # Move x-axis to top
 ax = plt.gca()
-ax.xaxis.set_ticks_position("top")
-ax.xaxis.set_label_position("top")
+ax.xaxis.set_ticks_position('top')
+ax.xaxis.set_label_position('top')
 
-# # Add (a) label in top left corner
-# txt = "(a) 0.2% allowed disruption\n      CIR+CB on layers 6-15"
-# plt.text(-0.2, 1.3, txt, transform=ax.transAxes, fontsize=10)
-
+# # Add colorbar
+# cbar = plt.colorbar(im, shrink=0.8)
+# cbar.set_label("WMDP-Cyber Accuracy (%)", rotation=270, labelpad=15)
 
 plt.tight_layout()
 stem = Path(__file__).stem
