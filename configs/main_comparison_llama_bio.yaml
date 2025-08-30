@@ -169,7 +169,7 @@ experiment_list:
       max_norm: 0.002
       retaining_rate: 0
 
-    # hopeless
+    # hopeless (btw, this is mistakenly duplicated, so ignore it)
     - loss_fn_name: circuit_breaker
       algorithm: GA
       max_norm: 0.002
