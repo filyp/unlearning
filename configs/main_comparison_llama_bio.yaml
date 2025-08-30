@@ -17,10 +17,7 @@ target_modules:
 # model_id: meta-llama/Llama-3.2-1B
 model_id: meta-llama/Llama-3.1-8B
 
-# dataset: wmdp_cyber_pairs
-# dataset: wmdp_cyber_pairs_only_ans
-# dataset: wmdp_cyber_deebs
-dataset: wmdp_cyber_simple
+dataset: wmdp_bio_simple
 num_examples_per_question: 3
 use_dev_split: false
 
@@ -67,59 +64,59 @@ cb_retaining_pow: 1.0
 
 experiment_list:
     
-    # 0 too slow
+    # 0
     - loss_fn_name: mlp_confuse
       max_norm: 0.02
 
-    # 1 ok
+    # 1
     - loss_fn_name: mlp_confuse
       max_norm: 0.05
 
-    # 2 ok
+    # 2
     - loss_fn_name: mlp_confuse
       max_norm: 0.1
 
-    # 3 ok - BEST
+    # 3 - previous BEST
     - loss_fn_name: mlp_confuse
       max_norm: 0.2
 
-    # 4 diverged
+    # 4
     - loss_fn_name: mlp_confuse
       max_norm: 0.5
 
 
-    # 5 too slow
+    # 5
     - loss_fn_name: circuit_breaker
       algorithm: GA
       loss_budget: 1.01
       max_norm: 0.001
 
-    # 6 ok - but a bit too fast, let's try 0.0015
+    # 6
     - loss_fn_name: circuit_breaker
       algorithm: GA
       loss_budget: 1.01
       max_norm: 0.002
 
-    # 7 diverged
+    # 7
     - loss_fn_name: circuit_breaker
       algorithm: GA
       loss_budget: 1.01
       max_norm: 0.005
 
-    # 8 diverged
+    # 8
     - loss_fn_name: circuit_breaker
       algorithm: GA
       loss_budget: 1.01
       max_norm: 0.01
 
-    # 9 diverged
+    # 9
     - loss_fn_name: circuit_breaker
       algorithm: GA
       loss_budget: 1.01
       max_norm: 0.02
 
 
-    # 10 too slow
+    # 10
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
@@ -127,7 +124,7 @@ experiment_list:
       loss_budget: 1.01
       max_norm: 0.00002
 
-    # 11 too slow
+    # 11
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
@@ -135,7 +132,7 @@ experiment_list:
       loss_budget: 1.01
       max_norm: 0.00005
 
-    # 12 ok - best
+    # 12 - previous best
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
@@ -143,7 +140,7 @@ experiment_list:
       loss_budget: 1.01
       max_norm: 0.0001
 
-    # 13 ok
+    # 13
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
@@ -151,7 +148,7 @@ experiment_list:
       loss_budget: 1.01
       max_norm: 0.0002
 
-    # 14 diverged
+    # 14
     - loss_fn_name: neg_cross_entropy
       algorithm: GA
       retaining_rate: 1e-5
@@ -159,62 +156,6 @@ experiment_list:
       loss_budget: 1.01
       max_norm: 0.0005
 
-
-
-    # ####### 15-24 are all hopeless - the loss_budget is just too small
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      max_norm: 0.001
-
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      max_norm: 0.002
-
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      max_norm: 0.005
-
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      max_norm: 0.01
-
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      max_norm: 0.02
-
-
-
-    - loss_fn_name: neg_cross_entropy
-      algorithm: GA
-      retaining_rate: 1e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.00002
-
-    - loss_fn_name: neg_cross_entropy
-      algorithm: GA
-      retaining_rate: 1e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.00005
-
-    # 22 - 12 repeated with 10x smaller loss_budget
-    - loss_fn_name: neg_cross_entropy
-      algorithm: GA
-      retaining_rate: 1e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0001
-
-
-    - loss_fn_name: neg_cross_entropy
-      algorithm: GA
-      retaining_rate: 1e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0002
-
-    - loss_fn_name: neg_cross_entropy
-      algorithm: GA
-      retaining_rate: 1e-5
-      retaining_loss_fns: [cross_entropy]
-      max_norm: 0.0005
 
 
 
@@ -235,37 +176,3 @@ experiment_list:
       max_norm: 0.002
       retaining_rate: 0
 
-
-
-    # 28
-    - loss_fn_name: mlp_confuse
-      max_norm: 0.2
-      loss_budget: 1.002
-
-    - loss_fn_name: mlp_confuse
-      max_norm: 0.2
-      loss_budget: 1.005
-
-    # 30 best of mlp_confuse repeated with 10x loss_budget
-    - loss_fn_name: mlp_confuse
-      max_norm: 0.2
-      loss_budget: 1.01
-
-
-    # 31 baseline
-    - loss_fn_name: mlp_confuse
-      max_num_epochs: 1
-      max_norm: 0.0
-
-
-    # 32 - very weird: goes well for a while and then reverses! as if the retaining won over the struggle
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      loss_budget: 1.01
-      max_norm: 0.0015
-
-    # 33 - 32 with 10x smaller loss_budget
-    - loss_fn_name: circuit_breaker
-      algorithm: GA
-      loss_budget: 1.001
-      max_norm: 0.0015
