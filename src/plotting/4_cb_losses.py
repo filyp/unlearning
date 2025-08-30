@@ -1,6 +1,7 @@
 # %%
 from pathlib import Path
 
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -89,15 +90,19 @@ for i, run_name in enumerate(run_names):
             label=run_labels[run_name],
         )
 
-ax1.plot(
-    [valid_data["forget_acc_t1"].iloc[0], 0.27],
-    [valid_data["wikitext_loss"].iloc[0], valid_data["wikitext_loss"].iloc[0]],
-    color="black",
-    marker="<",
-    markersize=5,
-    markevery=[-1],
-    label="ideal",
+ax1.annotate(
+    "",
+    xy=(0.27, valid_data["wikitext_loss"].iloc[0]),  # arrow base
+    xytext=(valid_data["forget_acc_t1"].iloc[0], valid_data["wikitext_loss"].iloc[0]),  # arrow tip
+    arrowprops=dict(
+        arrowstyle="->",
+        color="black",
+        linewidth=1
+    )
 )
+# Add invisible line for legend entry
+ax1.plot([], [], color="black", linewidth=1, label="ideal", marker='>', markersize=4, linestyle='-')
+
 
 ax1.set_xlabel("WMDP-Cyber Accuracy")
 ax1.set_ylabel("Wikitext Loss")
@@ -124,7 +129,6 @@ ax2.set_xlabel("WMDP-Cyber Accuracy")
 ax2.set_ylabel("Activation Norm")
 # ax2.grid(True, alpha=0.3)
 
-
 # Add legend at the bottom of the figure
 fig.legend(
     loc="lower center",
@@ -142,3 +146,5 @@ plt.subplots_adjust(bottom=0.32, hspace=0.0, wspace=0.36)
 stem = Path(__file__).stem
 plot_path = repo_root() / f"paper/plots/{stem}.pdf"
 plt.savefig(plot_path, bbox_inches=None, dpi=300)
+
+# %%
