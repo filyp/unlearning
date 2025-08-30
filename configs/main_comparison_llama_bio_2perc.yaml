@@ -158,14 +158,18 @@ experiment_list:
 
 
 
-    # bonus: no retain - kinda ok: 41% acc instead of 37% with retain
+    # bonus: no retain 
     - loss_fn_name: mlp_confuse
       max_norm: 0.1
       retaining_rate: 0
 
 
-
     # 16 - best of CIR, but for longer
     - loss_fn_name: mlp_confuse
       max_norm: 0.2
+      loss_budget: 1.02
+
+    # 17 - maybe this best of CIR but for longer
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.1
       loss_budget: 1.02
