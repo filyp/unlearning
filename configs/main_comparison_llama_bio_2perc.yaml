@@ -254,3 +254,13 @@ experiment_list:
       retaining_loss_fns: [cross_entropy]
       loss_budget: 1.03
       max_norm: 0.0005
+
+
+    # 30 - repeated 27 with more epochs
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.0001
+      max_num_epochs: 1000
