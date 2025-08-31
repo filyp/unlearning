@@ -252,16 +252,18 @@ dual_plot(data, ret_data, id_to_label, "bio", num_rel_epochs=100, big_disr_perc=
 # cir_drop / cb_drop
 
 init_acc = list(data.values())[0][0]["forget_acc_t1"]
-cb_accs = [x["forget_acc_t1"] for x in ret_data["21|circuit_breaker_GA_1.03_0.002|"]]
-cir_accs = [x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"]]
-ga_accs = [x["forget_acc_t1"] for x in ret_data["30|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0001_1000|"]]
-# bucket into buckets of 10 each and average in bucket, then take the max
-cb_post_drop = init_acc - max([np.mean(cb_accs[i:i+10]) for i in range(0, len(cb_accs), 10)])
-cir_post_drop = init_acc - max([np.mean(cir_accs[i:i+10]) for i in range(0, len(cir_accs), 10)])
-ga_post_drop = init_acc - max([np.mean(ga_accs[i:i+10]) for i in range(0, len(ga_accs), 10)])
-# cb_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["21|circuit_breaker_GA_1.03_0.002|"][-10:]])
-# cir_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"][-10:]])
-# ga_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["30|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0001_1000|"][-10:]])
+
+# cb_accs = [x["forget_acc_t1"] for x in ret_data["21|circuit_breaker_GA_1.03_0.002|"]]
+# cir_accs = [x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"]]
+# ga_accs = [x["forget_acc_t1"] for x in ret_data["30|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0001_1000|"]]
+# # bucket into buckets of 10 each and average in bucket, then take the max
+# cb_post_drop = init_acc - max([np.mean(cb_accs[i:i+10]) for i in range(0, len(cb_accs), 10)])
+# cir_post_drop = init_acc - max([np.mean(cir_accs[i:i+10]) for i in range(0, len(cir_accs), 10)])
+# ga_post_drop = init_acc - max([np.mean(ga_accs[i:i+10]) for i in range(0, len(ga_accs), 10)])
+
+cb_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["21|circuit_breaker_GA_1.03_0.002|"][-10:]])
+cir_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"][-10:]])
+ga_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["30|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0001_1000|"][-10:]])
 print(cb_post_drop, cir_post_drop, ga_post_drop)
 cir_post_drop / max(cb_post_drop, ga_post_drop)
 # ! so it's a 86x improvement
@@ -328,19 +330,19 @@ dual_plot(data, ret_data, id_to_label, "cyber", num_rel_epochs=100, big_disr_per
 # %% performance analysis
 
 init_acc = list(data.values())[0][0]["forget_acc_t1"]
-# cir_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"][-10:]])
-# cb_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["6|circuit_breaker_GA_1.01_0.002|"][-10:]])
-# cb_post_drop2 = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["36|circuit_breaker_GA_1.03_0.002|"][-10:]])
-# ga_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["43|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0002|"][-10:]])
-cir_accs = [x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"]]
-cb_accs = [x["forget_acc_t1"] for x in ret_data["6|circuit_breaker_GA_1.01_0.002|"]]
-cb_accs2 = [x["forget_acc_t1"] for x in ret_data["36|circuit_breaker_GA_1.03_0.002|"]]
-ga_accs = [x["forget_acc_t1"] for x in ret_data["43|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0002|"]]
-# bucket into buckets of 10 each and average in bucket, then take the max
-cir_post_drop = init_acc - max([np.mean(cir_accs[i:i+10]) for i in range(0, len(cir_accs), 10)])
-cb_post_drop = init_acc - max([np.mean(cb_accs[i:i+10]) for i in range(0, len(cb_accs), 10)])
-cb_post_drop2 = init_acc - max([np.mean(cb_accs2[i:i+10]) for i in range(0, len(cb_accs2), 10)])
-ga_post_drop = init_acc - max([np.mean(ga_accs[i:i+10]) for i in range(0, len(ga_accs), 10)])
+cir_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"][-10:]])
+cb_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["6|circuit_breaker_GA_1.01_0.002|"][-10:]])
+cb_post_drop2 = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["36|circuit_breaker_GA_1.03_0.002|"][-10:]])
+ga_post_drop = init_acc - np.mean([x["forget_acc_t1"] for x in ret_data["43|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0002|"][-10:]])
+# cir_accs = [x["forget_acc_t1"] for x in ret_data["3|mlp_confuse_0.2|"]]
+# cb_accs = [x["forget_acc_t1"] for x in ret_data["6|circuit_breaker_GA_1.01_0.002|"]]
+# cb_accs2 = [x["forget_acc_t1"] for x in ret_data["36|circuit_breaker_GA_1.03_0.002|"]]
+# ga_accs = [x["forget_acc_t1"] for x in ret_data["43|neg_cross_entropy_GA_1e-05_['cross_entropy']_1.03_0.0002|"]]
+# # bucket into buckets of 10 each and average in bucket, then take the max
+# cir_post_drop = init_acc - max([np.mean(cir_accs[i:i+10]) for i in range(0, len(cir_accs), 10)])
+# cb_post_drop = init_acc - max([np.mean(cb_accs[i:i+10]) for i in range(0, len(cb_accs), 10)])
+# cb_post_drop2 = init_acc - max([np.mean(cb_accs2[i:i+10]) for i in range(0, len(cb_accs2), 10)])
+# ga_post_drop = init_acc - max([np.mean(ga_accs[i:i+10]) for i in range(0, len(ga_accs), 10)])
 print(cir_post_drop, cb_post_drop, cb_post_drop2, ga_post_drop)
 cir_post_drop / max(cb_post_drop, cb_post_drop2, ga_post_drop)
 # ! so it's a 31x drop
