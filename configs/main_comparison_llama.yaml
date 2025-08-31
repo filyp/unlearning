@@ -60,6 +60,8 @@ retaining_loss_fns: [cb_retain]
 cb_retaining_layers: [12]
 cb_retaining_pow: 1.0
 
+pca_every_n: 1
+
 # let's search 3 OOMs, using 9 runs, and a constant low retaining rate
 #
 # for GA:
@@ -354,4 +356,27 @@ experiment_list:
     - loss_fn_name: mlp_confuse
       max_norm: 0.2
       loss_budget: 1.03
+
+
+    # 46 - forked 3, but without any eval (it was commented out)
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      max_num_epochs: 9
+
+    # 47 - this one is identical to 3
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      max_num_epochs: 10
+
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      max_num_epochs: 8
+
+    # 49 - forked 3, but without any eval (it was commented out) and also rarer PCA
+    # actually it breaks wikitext too much!
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      max_num_epochs: 10
+      pca_every_n: 20
+
 

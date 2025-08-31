@@ -496,7 +496,7 @@ for epoch in range(cfg.max_num_epochs):
     model.zero_grad(set_to_none=True)
     pt.cuda.empty_cache()
 
-    if cfg.algorithm == "CIR":
+    if cfg.algorithm == "CIR" and epoch % cfg.get("pca_every_n", 1) == 0:
         # ! calculate means and PCA components
         # _start_time = time.time()
         act_to_collapse = get_projections(acts_list, cfg.act_proj_num, cfg.cir_niter)
