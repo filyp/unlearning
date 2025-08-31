@@ -173,3 +173,84 @@ experiment_list:
     - loss_fn_name: mlp_confuse
       max_norm: 0.1
       loss_budget: 1.02
+
+    # 18 - dummy
+    - comment: dummy
+
+    # 19 - dummy
+    - comment: dummy
+
+
+
+    # runs with 3% disruption ########################################
+
+    # 20
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.03
+      max_norm: 0.001
+
+    # 21
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.03
+      max_norm: 0.002
+
+    # 22
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.03
+      max_norm: 0.005
+
+    # 23
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.03
+      max_norm: 0.01
+
+    # 24
+    - loss_fn_name: circuit_breaker
+      algorithm: GA
+      loss_budget: 1.03
+      max_norm: 0.02
+
+
+    # 25
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.00002
+
+    # 26
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.00005
+
+    # 27 - previous best
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.0001
+
+    # 28
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.0002
+
+    # 29
+    - loss_fn_name: neg_cross_entropy
+      algorithm: GA
+      retaining_rate: 1e-5
+      retaining_loss_fns: [cross_entropy]
+      loss_budget: 1.03
+      max_norm: 0.0005
