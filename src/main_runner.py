@@ -56,7 +56,7 @@ parser.add_argument("--group-name", type=str, default=None)
 args, remaining_args = parser.parse_known_args()
 
 if get_ipython() is not None:
-    args.config_name = "mlp_confuse"
+    args.config_name = "main_comparison_llama_bio"
     args.exp_num = 0
     remaining_args = ["model_id=meta-llama/Llama-3.2-1B"]  # locally we use only 1B
 

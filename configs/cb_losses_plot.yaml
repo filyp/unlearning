@@ -1,3 +1,5 @@
+# used for the figure "Comparison of three ways of breaking representations."
+
 # general, unlikely to change
 tokenizer:
     max_length: 128

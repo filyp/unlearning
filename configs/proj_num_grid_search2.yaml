@@ -1,3 +1,5 @@
+# used for the figure "CIR hyperparameter searches." (b)
+
 # searches over:
 # a_proj_nums=(0 1 6 12 24 36 48)
 # g_proj_nums=(0 1 6 12 24 36 48)
