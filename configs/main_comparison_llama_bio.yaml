@@ -264,3 +264,8 @@ experiment_list:
       loss_budget: 1.03
       max_norm: 0.0001
       max_num_epochs: 1000
+
+    # 31 - forked 3, but without any eval (it was commented out)
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      max_num_epochs: 16
