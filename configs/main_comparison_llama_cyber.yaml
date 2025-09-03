@@ -60,6 +60,7 @@ retaining_loss_fns: [cb_retain]
 cb_retaining_layers: [12]
 cb_retaining_pow: 1.0
 
+retain_on_dev: false
 pca_every_n: 1
 
 # let's search 3 OOMs, using 9 runs, and a constant low retaining rate
@@ -383,4 +384,18 @@ experiment_list:
     - loss_fn_name: mlp_confuse
       max_norm: 0.2
       retain_on_dev: true
+
+    # 51 - fork of 50
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      retain_on_dev: true
+      max_num_epochs: 10
+
+    # 52 - 3 duplicate
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      retraining_epochs: 15
+
+
+
 

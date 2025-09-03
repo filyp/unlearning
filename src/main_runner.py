@@ -221,6 +221,16 @@ model = AutoModelForCausalLM.from_pretrained(
 model.config.use_cache = False
 all_layers = model.model.layers  # for trimmed model
 
+
+# inspect per question acc
+acc_list = []
+for ex in eval_qs:
+    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+    acc_list.append(acc)
+    logging.info(f"{acc=}, {ex['question']}")
+
+
+
 if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
     max_layer = max(cfg.layer_range)
     model.model.layers = model.model.layers[: max_layer + 1]
@@ -536,6 +546,16 @@ logging.info(f"time taken: {time.time() - start_time:.2f}s")
 
 model.model.layers = all_layers  # for trimmed model
 
+
+# inspect per question acc
+acc_list2 = []
+for ex in eval_qs:
+    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+    acc_list2.append(acc)
+    logging.info(f"{acc=}, {ex['question']}")
+
+
+
 # %% retraining on T
 
 if "retraining_epochs" not in cfg:
@@ -574,3 +594,9 @@ for epoch in range(cfg.retraining_epochs):
     wandb.log(res)
 
 wandb.finish()
+
+# inspect per question acc
+for a1, a2, ex in zip(acc_list, acc_list2, eval_qs):
+    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+    logging.info(f"{a1=}, {a2=}, {acc=}, {acc - a1=}, {acc - a2=}, {ex['question']}, choices={ex['choices']}, correct_answer={ex['choices'][ex['answer']]}")
+
