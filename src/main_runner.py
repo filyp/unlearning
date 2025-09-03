@@ -64,9 +64,9 @@ with hydra.initialize(config_path="../configs", version_base="1.2"):
     # Load base config without overrides first
     base_cfg = hydra.compose(config_name=args.config_name)
     cfg = OmegaConf.merge(
-        base_cfg, 
+        base_cfg,
         base_cfg.experiment_list[args.exp_num],
-        OmegaConf.from_dotlist(remaining_args)
+        OmegaConf.from_dotlist(remaining_args),
     )
 
 
@@ -124,8 +124,8 @@ if "pairs" in cfg.dataset:
     retraining_batches = load_batches_from_pairs_set(T, cfg, only_ans)
 
 elif "simple" in cfg.dataset:
-    training_batches = load_batches_from_simple_set(T_and_V, cfg)
-    retraining_batches = load_batches_from_simple_set(T, cfg)
+    training_batches = load_batches_from_simple_set(T_and_V, cfg, cfg.train_batch_size)
+    retraining_batches = load_batches_from_simple_set(T, cfg, cfg.train_batch_size)
 
 elif "deebs" in cfg.dataset:
     deebs_corpus = load_local("wmdp_deduped_deebs_corpus.jsonl")
@@ -168,6 +168,18 @@ if cfg.mask_n_most_common_tokens is not None:
 
     coverage = sum(c for _, c in counter.most_common(nt)) / sum(counter.values())
     logging.info(f"coverage: {coverage:.2f}")
+
+
+if cfg.get("retain_on_dev", False):
+    if "bio" in cfg.dataset:
+        dev_T = load_local(f"wmdp_deduped_bio/dev_T_{_corpus_version}.jsonl")
+        dev_V = load_local(f"wmdp_deduped_bio/dev_V_{_corpus_version}.jsonl")
+    elif "cyber" in cfg.dataset:
+        dev_T = load_local(f"wmdp_deduped_cyber/dev_T_{_corpus_version}.jsonl")
+        dev_V = load_local(f"wmdp_deduped_cyber/dev_V_{_corpus_version}.jsonl")
+    dev_T_and_V = concatenate_datasets([dev_T, dev_V])
+
+    retain_batches = load_batches_from_simple_set(dev_T_and_V, cfg, cfg.retain_batch_size)
 
 
 def _get_loss(model, batches, use_answer_mask=False):
@@ -322,7 +334,6 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
             batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
             batch["org_mlp_in"][layer_id] = mlp.cached_in.detach().cpu()
 
-
     # # * cache the activations for mlp confuse retaining
     # retain_batches = retain_batches[: len(training_batches)]
     # if (cfg.get("retaining_rate", 0) > 0) and ("mlp_confuse_retain" in cfg.retaining_loss_fns):
@@ -346,7 +357,11 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
 # experiment number -> name
 project_name = "unlearning/" + Path(__file__).relative_to(repo_root()).as_posix()
 project_name = project_name.replace("/", "|")
-group = args.group_name if args.group_name is not None else f"{args.config_name}_{get_conf_hash(args.config_name)}"
+group = (
+    args.group_name
+    if args.group_name is not None
+    else f"{args.config_name}_{get_conf_hash(args.config_name)}"
+)
 _args = "_".join(str(v) for v in cfg.experiment_list[args.exp_num].values())
 run_name = f"{args.exp_num}|{_args}|{'_'.join(remaining_args)}"
 wandb.init(
@@ -469,7 +484,7 @@ for epoch in range(cfg.max_num_epochs):
             if "cb_retain" in cfg.retaining_loss_fns:
                 loss += loss_fns.cb_retain(output, batch, cfg)
             # if "mlp_confuse_retain" in cfg.retaining_loss_fns:
-                # loss += loss_fns.mlp_confuse_retain(model, batch, cfg)
+            # loss += loss_fns.mlp_confuse_retain(model, batch, cfg)
 
             loss.backward()
 

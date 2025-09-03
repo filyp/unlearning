@@ -379,4 +379,8 @@ experiment_list:
       max_num_epochs: 10
       pca_every_n: 20
 
+    # 50 - fork of 3
+    - loss_fn_name: mlp_confuse
+      max_norm: 0.2
+      retain_on_dev: true
 

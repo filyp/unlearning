@@ -167,8 +167,7 @@ def load_recall_batches(questions, cfg, batch_size=1):
     return batches
 
 
-def load_batches_from_simple_set(dataset, cfg):
-    batch_size = cfg.train_batch_size
+def load_batches_from_simple_set(dataset, cfg, batch_size):
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
     tokenizer.pad_token = tokenizer.eos_token
 
