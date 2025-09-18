@@ -1,6 +1,7 @@
 # %%
+import logging
 import pandas as pd
-from datasets import load_dataset
+from datasets import Dataset, concatenate_datasets, load_dataset
 from transformers import AutoTokenizer
 
 from utils.git_and_reproducibility import repo_root
@@ -186,3 +187,40 @@ def load_batches_from_simple_set(dataset, cfg, batch_size):
     return batches
 
 
+def load_wmdp_simple_set(cfg, tokenizer):
+    if cfg.dataset == "bio":
+        retain_set = load_fineweb_bio_corpus()
+    elif cfg.dataset == "cyber":
+        retain_set = load_fineweb_tech_corpus()
+
+    is_dev = "dev_" if cfg.use_dev_split else ""
+    T = load_local(f"wmdp_deduped_{cfg.dataset}/{is_dev}T_corpus_simple.jsonl")
+    V = load_local(f"wmdp_deduped_{cfg.dataset}/{is_dev}V_corpus_simple.jsonl")
+
+    _model_id = cfg.model_id.split("/")[-1]
+    if _model_id in T.column_names:
+        logging.info(f"Filtering out texts with {_model_id} score < 0.25")
+        T = T.filter(lambda x: x[_model_id] > 0.25)
+        V = V.filter(lambda x: x[_model_id] > 0.25)
+    else:
+        logging.info(f"No {_model_id} score in the dataset, not filtering")
+
+    T_and_V = concatenate_datasets([T, V])
+    eval_qs = T_and_V if cfg.get("eval_on_all_questions", False) else V
+    logging.info(f"{len(T)=}, {len(V)=}, {len(eval_qs)=}")
+
+    training_batches = load_batches_from_simple_set(T_and_V, cfg, cfg.train_batch_size)
+    retraining_batches = load_batches_from_simple_set(T, cfg, cfg.train_batch_size)
+    retain_batches = [
+        tokenizer(x["text"], **cfg.tokenizer)
+        for x in retain_set.shuffle(seed=42).batch(cfg.retain_batch_size)
+    ]
+    recall_batches = load_recall_batches(eval_qs, cfg, batch_size=1)
+
+    # * follow the format of open-unlearning
+    train_dataset = [
+        dict(forget=fb, retain=rb)
+        for fb, rb in zip(training_batches, retain_batches)
+    ]
+    
+    return train_dataset, retraining_batches, recall_batches, eval_qs

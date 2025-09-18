@@ -17,11 +17,9 @@
 #    inspect per question acc
 
 import argparse
-import itertools
 import logging
 import time
 from collections import Counter
-from copy import deepcopy
 from pathlib import Path
 
 import hydra
@@ -35,12 +33,10 @@ from transformers import AutoTokenizer
 import wandb
 from utils import loss_fns
 from utils.common_cir import *
-from utils.common_cir import _get_projections
 from utils.data_loading import *
 from utils.evals import eval_on
-from utils.git_and_reproducibility import get_conf_hash, repo_root
+from utils.git_and_reproducibility import get_conf_hash
 from utils.loss_fns import cross_entropy, kl_loss
-from utils.plots import print_colored_tokens
 from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_modules
 
 # plt dark theme
@@ -90,7 +86,7 @@ tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
 tokenizer.pad_token = tokenizer.eos_token
 
 # ! load wikitext batches
-wikitext = load_local(repo_root() / "data" / "wikitext_16k.jsonl")
+wikitext = load_local("wikitext_16k.jsonl")
 wikitext_batches = [
     tokenizer(x["text"], **cfg.tokenizer)
     for x in wikitext.shuffle(seed=42).batch(cfg.wikitext_batch_size)
@@ -310,8 +306,7 @@ if cfg.loss_fn_name == "circuit_breaker":
 
 if cfg.loss_fn_name in ["mlp_confuse"]:
     # * install hooks for MLPs
-    def save_acts_hook(module, args, output):
-        module.cached_in = args[0]
+    def save_output_hook(module, args, output):
         module.cached_out = output
 
     def stop_grad_hook(module, grad_input, grad_output):
@@ -322,7 +317,7 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
         return [None] + list(grad_input[1:])
 
     for layer_id in range(*cfg.layer_range):
-        model.model.layers[layer_id].mlp.register_forward_hook(save_acts_hook)
+        model.model.layers[layer_id].mlp.register_forward_hook(save_output_hook)
         # if cfg.mlp_stop_grad:
         #     model.model.layers[layer_id].mlp.gate_proj.register_full_backward_hook(stop_grad_hook)
         #     model.model.layers[layer_id].mlp.up_proj.register_full_backward_hook(stop_grad_hook)
@@ -336,13 +331,11 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
         _mask[:, : cfg.cut_off_tokens] = False
         batch["org_mlp_out"] = {}
         batch["org_mlp_out_norm"] = {}
-        batch["org_mlp_in"] = {}
         for layer_id in range(*cfg.layer_range):
             mlp = model.model.layers[layer_id].mlp
             out = mlp.cached_out.detach()[_mask]
             batch["org_mlp_out"][layer_id] = out.cpu()
             batch["org_mlp_out_norm"][layer_id] = out.float().norm(dim=-1).mean().cpu()
-            batch["org_mlp_in"][layer_id] = mlp.cached_in.detach().cpu()
 
     # # * cache the activations for mlp confuse retaining
     # retain_batches = retain_batches[: len(training_batches)]

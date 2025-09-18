@@ -1,0 +1,47 @@
+data:
+  dataset: bio
+  use_dev_split: false
+  num_examples_per_question: 3
+  train_batch_size: 32  # can be higher because batches are usually shorter
+  wikitext_batch_size: 16
+  retain_batch_size: 12  # lowered from 16 because it caused OOM with GA
+  tokenizer:
+      max_length: 128
+      padding: true
+      truncation: true
+      return_tensors: pt
+  model_id: ${model_id}
+  # eval_on_all_questions: true  # best to just use it when not retraining
+
+num_eval_batches: 16
+target_modules:
+  - gate_proj
+  - up_proj
+  - down_proj
+model_id: meta-llama/Llama-3.2-1B
+# model_id: meta-llama/Llama-3.2-3B
+# model_id: meta-llama/Llama-3.1-8B
+
+# default experiment config
+loss_budget: 1.001
+max_num_epochs: 200
+
+# CIR hyperparameters:
+cir_niter: 16
+cut_off_tokens: 1
+mlp_floor: 0.0
+act_proj_num: 24
+grad_proj_num: 36
+layer_range: [6, 12]
+retaining_rate: 3e-4  # 1e-3 is fine too, but let's be safe and slow
+cb_retaining_layers: [12]
+cb_retaining_pow: 1.0
+unlearning_rate: 0.2
+
+
+# retraining_rate: 1e-5  # even with 1e-6, wikitext_loss has this Nike shape
+# retraining_epochs: 100
+
+# algorithm: CIR
+# loss_fn_name: mlp_confuse
+# retaining_loss_fns: [cb_retain]

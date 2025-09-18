@@ -59,7 +59,7 @@ def trainable_modules(model):
 
 
 def scale_grads_(model, factor: float):
-    for _, p in model.named_parameters():
+    for p in model.parameters():
         if p.grad is not None:
             p.grad *= factor
 
