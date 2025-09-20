@@ -17,7 +17,6 @@ pip install -e . --no-deps
 
 A clean implementation of the CIR technique is in [`src/CIR.py`](src/CIR.py), which can be run simply with `python src/CIR.py`. Or if you're familiar with `transformers.Trainer` format, you may instead prefer to look at the equivalent [`src/CIR_trainer.py`](src/CIR_trainer.py).
 
-
 # Reproducing results from the paper
 
 The main runner for running various methods is [`src/main_runner.py`](src/main_runner.py).
@@ -51,6 +50,3 @@ With `NUM` as 0-4 (5 CIR runs), 35-39 (5 circuit breakers runs), 40-44 (5 gradie
 
 In the [`configs`](configs) directory you can find configs for other plots from the appendix.
 
-# CIR code
-
-[`src/main_runner.py`](src/main_runner.py) is the entry point for running everything, so it's quite complex. If you just want to use CIR, best to look in [`src/utils/common_cir.py`](src/utils/common_cir.py) for the implementation of CIR's crucial operations, and then in the `main_runner.py` to see how they are used.
