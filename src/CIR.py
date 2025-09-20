@@ -1,9 +1,4 @@
 # %%
-# usage:
-# python src/main_runner.py --config-name=CONFIG_NAME --exp-num=NUM
-# for example:
-# python src/main_runner.py --config-name=cb --exp-num=3
-
 import logging
 import time
 from contextlib import contextmanager

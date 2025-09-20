@@ -13,9 +13,15 @@ pip install -r requirements.txt
 pip install -e . --no-deps
 ```
 
-# Running
+# Collapse of Irrelevant Representations (CIR)
+
+A clean implementation of the CIR technique is in [`src/CIR.py`](src/CIR.py), which can be run simply with `python src/CIR.py`. Or if you're familiar with `transformers.Trainer` format, you may instead prefer to look at the equivalent [`src/CIR_trainer.py`](src/CIR_trainer.py).
+
+
+# Reproducing results from the paper
 
 The main runner for running various methods is [`src/main_runner.py`](src/main_runner.py).
+(Note that it includes many technique options, so if you're just interested in CIR (the best performing method), [`src/CIR.py`](src/CIR.py) should be clearer.)
 Run it as:
 
 ```bash
