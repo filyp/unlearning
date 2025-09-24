@@ -105,7 +105,7 @@ ax1.plot([], [], color="black", linewidth=1, label="ideal", marker='>', markersi
 
 
 ax1.set_xlabel("WMDP-Cyber Accuracy")
-ax1.set_ylabel("Wikitext Loss")
+ax1.set_ylabel("WikiText Loss")
 # ax1.grid(True, alpha=0.3)
 
 # Second plot: act_norm vs forget_acc_t1

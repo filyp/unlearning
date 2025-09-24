@@ -13,9 +13,8 @@ plt.style.use("default")
 plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.size"] = 10
 
-config_name = "datasets"
 project_name = "unlearning|src|main_runner.py"
-group = config_name + "_" + get_conf_hash(config_name)
+group = "datasets" + "_" + get_conf_hash("old/datasets")
 # h = "ac6bd2"
 # group = config_name + "_" + h
 
@@ -121,7 +120,7 @@ def plot_data(ax, data, run_names, y_metric, invert_y=False):
                 linewidth=1,
             )
 
-    # ax.set_xlabel("Wikitext Loss")
+    # ax.set_xlabel("WikiText Loss")
     # ax.set_ylabel(y_metric.replace("_", " ").title())
     ax.grid(True, alpha=0.3)
     ax.tick_params(axis="y", rotation=90)
@@ -138,10 +137,10 @@ plot_data(axes[0, 2], bio_cir_data, bio_cir_runs, "forget_acc", invert_y=True)
 plot_data(axes[0, 3], bio_ga_data, bio_ga_runs, "forget_acc", invert_y=True)
 
 # Plot CYBER row (row 1)
-axes[1, 0].set_xlabel("Wikitext Loss")
-axes[1, 1].set_xlabel("Wikitext Loss")
-axes[1, 2].set_xlabel("Wikitext Loss")
-axes[1, 3].set_xlabel("Wikitext Loss")
+axes[1, 0].set_xlabel("WikiText Loss")
+axes[1, 1].set_xlabel("WikiText Loss")
+axes[1, 2].set_xlabel("WikiText Loss")
+axes[1, 3].set_xlabel("WikiText Loss")
 plot_data(axes[1, 0], cyber_cir_data, cyber_cir_runs, "forget_loss")
 plot_data(axes[1, 1], cyber_ga_data, cyber_ga_runs, "forget_loss")
 plot_data(axes[1, 2], cyber_cir_data, cyber_cir_runs, "forget_acc", invert_y=True)

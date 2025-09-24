@@ -51,7 +51,10 @@ def dual_plot(data, ret_data, id_to_label, dataset, num_rel_epochs=60, big_disr_
     # Process data separately to avoid key conflicts
     for run_name, run_data in data.items():
         # Only use runs where IDs are defined
-        id_ = int(run_name.split("|")[0])
+        try:
+            id_ = int(run_name.split("|")[0])
+        except ValueError:
+            continue
         if id_ not in id_to_label:
             continue
 
@@ -75,7 +78,10 @@ def dual_plot(data, ret_data, id_to_label, dataset, num_rel_epochs=60, big_disr_
     # Process data separately to avoid key conflicts
     for run_name, run_data in ret_data.items():
         # Only use runs where IDs are defined
-        id_ = int(run_name.split("|")[0])
+        try:
+            id_ = int(run_name.split("|")[0])
+        except ValueError:
+            continue
         if id_ not in id_to_label:
             continue
 
@@ -105,7 +111,7 @@ def dual_plot(data, ret_data, id_to_label, dataset, num_rel_epochs=60, big_disr_
     ax2.set_title("Relearning", pad=17)
 
     # Add axis labels
-    ax1.set_xlabel("Wikitext Loss")
+    ax1.set_xlabel("WikiText Loss")
     ax1.set_ylabel(f"WMDP-{dataset.capitalize()} Accuracy (%)")
     ax2.set_xlabel("Epochs")
 
