@@ -222,12 +222,6 @@ all_layers = model.model.layers  # for trimmed model
 #     logging.info(f"{acc=}, {ex['question']}")
 
 
-if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
-    max_layer = max(cfg.layer_range)
-    model.model.layers = model.model.layers[: max_layer + 1]
-    if cfg.get("cb_retaining_layers"):
-        assert max(cfg.cb_retaining_layers) <= max_layer
-
 
 # * set trainable params
 logging.info(f"target_modules: {cfg.target_modules}")
@@ -246,6 +240,18 @@ if cfg.get("retain_to_original", False) or cfg.get("decay_to_orig", False):
     }
 
 install_hooks(model)
+
+
+# ! watch out - placing this optimization before retraining_optimizer is defined,
+# causes it to bind only to the early layers!
+# it's an unintended bug, but quite benign, since we only modified th early layers, retraining only them is not that bad
+# but beware this anyway
+if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
+    max_layer = max(cfg.layer_range)
+    model.model.layers = model.model.layers[: max_layer + 1]
+    if cfg.get("cb_retaining_layers"):
+        assert max(cfg.cb_retaining_layers) <= max_layer
+
 
 unit_optimizer = pt.optim.SGD(model.parameters(), lr=1.0)
 retraining_optimizer = pt.optim.SGD(model.parameters(), lr=cfg.retraining_rate)
