@@ -23,10 +23,9 @@ from collections import Counter
 from pathlib import Path
 
 import hydra
-import matplotlib.pyplot as plt
 import torch as pt
 from datasets import Dataset, concatenate_datasets, load_dataset
-from IPython import get_ipython
+# from IPython import get_ipython
 from omegaconf import DictConfig, OmegaConf, open_dict
 from transformers import AutoTokenizer
 
@@ -39,9 +38,6 @@ from utils.git_and_reproducibility import get_conf_hash
 from utils.loss_fns import cross_entropy, kl_loss
 from utils.training import get_update_norm, scale_grads_, set_seeds, trainable_modules
 
-# plt dark theme
-plt.style.use("dark_background")
-
 logging.basicConfig(level=logging.INFO)
 
 # Parse just the config-name, let Hydra handle the rest
@@ -51,10 +47,10 @@ parser.add_argument("--exp-num", type=int)
 parser.add_argument("--group-name", type=str, default=None)
 args, remaining_args = parser.parse_known_args()
 
-if get_ipython() is not None:
-    args.config_name = "main_comparison_llama_bio"
-    args.exp_num = 0
-    remaining_args = ["model_id=meta-llama/Llama-3.2-1B"]  # locally we use only 1B
+# if get_ipython() is not None:
+#     args.config_name = "main_comparison_llama_bio"
+#     args.exp_num = 0
+#     remaining_args = ["model_id=meta-llama/Llama-3.2-1B"]  # locally we use only 1B
 
 with hydra.initialize(config_path="../configs", version_base="1.2"):
     # Load base config without overrides first
@@ -182,7 +178,7 @@ def _get_loss(model, batches, use_answer_mask=False):
     loss_acc = 0
     for batch in batches:
         with pt.no_grad():
-            output = model(**batch)
+            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
             if use_answer_mask:
                 answer_mask = batch["answer_mask"]
                 loss_acc += cross_entropy(output, batch, answer_mask).item()
@@ -218,13 +214,12 @@ model.config.use_cache = False
 all_layers = model.model.layers  # for trimmed model
 
 
-# inspect per question acc
-acc_list = []
-for ex in eval_qs:
-    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
-    acc_list.append(acc)
-    logging.info(f"{acc=}, {ex['question']}")
-
+# # inspect per question acc
+# acc_list = []
+# for ex in eval_qs:
+#     acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+#     acc_list.append(acc)
+#     logging.info(f"{acc=}, {ex['question']}")
 
 
 if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
@@ -238,8 +233,8 @@ if cfg.loss_fn_name in ["circuit_breaker", "mlp_confuse"]:  # trim the model
 logging.info(f"target_modules: {cfg.target_modules}")
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in cfg.target_modules)
-    if p.requires_grad:
-        logging.info(f"training {n}")
+    # if p.requires_grad:
+    #     logging.info(f"training {n}")
 
 if cfg.get("retain_to_original", False) or cfg.get("decay_to_orig", False):
     # assert num_gpus == 2
@@ -265,7 +260,7 @@ if (cfg.get("retaining_rate", 0) > 0) and ("cb_retain" in cfg.retaining_loss_fns
     # _act_cache_batches = training_batches
     for batch in retain_batches:
         with pt.no_grad():
-            output = model(**batch, output_hidden_states=True)
+            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
         batch["retain_acts"] = {
             l_num: output.hidden_states[l_num].detach().to("cpu")
             for l_num in cfg.cb_retaining_layers
@@ -275,7 +270,7 @@ if cfg.loss_fn_name == "circuit_breaker":
     # * cache the activations for circuit breaker
     for batch in training_batches:
         with pt.no_grad():
-            output = model(**batch, output_hidden_states=True)
+            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
         _mask[:, : cfg.cut_off_tokens] = False
@@ -325,7 +320,7 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
     # * cache the activations for MLP confusion
     for batch in training_batches:
         with pt.no_grad():
-            output = model(**batch)
+            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
         _mask = batch.get("answer_mask", batch["attention_mask"])
         _mask = _mask.bool().clone()
         _mask[:, : cfg.cut_off_tokens] = False
@@ -342,7 +337,7 @@ if cfg.loss_fn_name in ["mlp_confuse"]:
     # if (cfg.get("retaining_rate", 0) > 0) and ("mlp_confuse_retain" in cfg.retaining_loss_fns):
     #     for batch in retain_batches:
     #         with pt.no_grad():
-    #             output = model(**batch, output_hidden_states=True)
+    #             output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
     #         _mask = batch.get("answer_mask", batch["attention_mask"])
     #         _mask = _mask.bool().clone()
     #         # _mask[:, : cfg.cut_off_tokens] = False  # do not do it! retain everywhere!
@@ -403,7 +398,7 @@ for epoch in range(cfg.max_num_epochs):
         pt.cuda.empty_cache()
         answer_mask = batch.get("answer_mask", None)  # use answer_mask if it exists
 
-        output = model(**batch, output_hidden_states=True)
+        output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
         loss_fn = getattr(loss_fns, cfg.loss_fn_name)
         if cfg.loss_fn_name == "mlp_confuse":
             loss = loss_fn(model, batch, cfg, answer_mask)
@@ -476,8 +471,7 @@ for epoch in range(cfg.max_num_epochs):
                 _retain_iter += 1
                 _mask = batch["attention_mask"].bool()
 
-            output = model(**batch, output_hidden_states=True)
-            # output = model(**batch)
+            output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], output_hidden_states=True)
 
             loss = 0
             if "kl_loss" in cfg.retaining_loss_fns:
@@ -540,13 +534,12 @@ logging.info(f"time taken: {time.time() - start_time:.2f}s")
 model.model.layers = all_layers  # for trimmed model
 
 
-# inspect per question acc
-acc_list2 = []
-for ex in eval_qs:
-    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
-    acc_list2.append(acc)
-    logging.info(f"{acc=}, {ex['question']}")
-
+# # inspect per question acc
+# acc_list2 = []
+# for ex in eval_qs:
+#     acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+#     acc_list2.append(acc)
+#     logging.info(f"{acc=}, {ex['question']}")
 
 
 # %% retraining on T
@@ -558,8 +551,8 @@ if "retraining_epochs" not in cfg:
 mlp_modules = ["gate_proj", "up_proj", "down_proj"]
 for n, p in model.named_parameters():
     p.requires_grad = any(pattern in n for pattern in mlp_modules)
-    if p.requires_grad:
-        logging.info(f"training {n}")
+    # if p.requires_grad:
+        # logging.info(f"training {n}")
 
 wandb.init(
     project="ret_" + project_name,
@@ -577,7 +570,7 @@ for epoch in range(cfg.retraining_epochs):
     for batch in retraining_batches:
         pt.cuda.empty_cache()
         model.zero_grad(set_to_none=True)
-        output = model(**batch)
+        output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
         loss = cross_entropy(output, batch)
         loss.backward()
         retraining_optimizer.step()
@@ -588,8 +581,8 @@ for epoch in range(cfg.retraining_epochs):
 
 wandb.finish()
 
-# inspect per question acc
-for a1, a2, ex in zip(acc_list, acc_list2, eval_qs):
-    acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
-    logging.info(f"{a1=}, {a2=}, {acc=}, {acc - a1=}, {acc - a2=}, {ex['question']}, choices={ex['choices']}, correct_answer={ex['choices'][ex['answer']]}")
+# # inspect per question acc
+# for a1, a2, ex in zip(acc_list, acc_list2, eval_qs):
+#     acc = eval_on(Dataset.from_list([ex]), model, temperature=1)
+#     logging.info(f"{a1=}, {a2=}, {acc=}, {acc - a1=}, {acc - a2=}, {ex['question']}, choices={ex['choices']}, correct_answer={ex['choices'][ex['answer']]}")
 
