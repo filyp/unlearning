@@ -181,7 +181,7 @@ def _get_loss(model, batches, use_answer_mask=False):
             output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
             if use_answer_mask:
                 answer_mask = batch["answer_mask"]
-                loss_acc += cross_entropy(output, batch, answer_mask).item()
+                loss_acc += cross_entropy(output, batch, answer_mask=answer_mask).item()
             else:
                 loss_acc += cross_entropy(output, batch).item()
     return loss_acc / len(batches)
